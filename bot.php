@@ -3,7 +3,7 @@
 <html lang="en">
 <head>
 <title>Tweet Me Tunes bot</title>
-<meta http-equiv="refresh" content="900">
+<meta http-equiv="refresh" content="300">
 </head>
 <body>
 <?php
@@ -33,7 +33,7 @@ function tweet($conn, $status)
 	return $result;
 }
 
-function recommend($conn, $u, $text, $reply_id)
+function recommend($conn, $u, $text, $reply_id, $lfm_key)
 {	
 	$query_music = str_replace("\"", "", split_query($text));
 	$now_playing = search("%23nowplaying+$query_music");
@@ -44,7 +44,7 @@ function recommend($conn, $u, $text, $reply_id)
 		
 		foreach ($also_playing as $result2)
 		{
-			$music_info = extract_music_info($result2['text']);
+			$music_info = extract_music_info($result2['text'], $lfm_key);
 		
 			if (!empty($music_info['artist']) && !empty($music_info['track']))
 			{
@@ -101,11 +101,11 @@ function split_query($query)
 	return substr($query, strlen($fmt));
 }
 
-function get_artist_plays($artist)
+function get_artist_plays($artist, $lfm_key)
 {
 	try
 	{
-		$xml = new SimpleXMLElement("http://ws.audioscrobbler.com/2.0/?method=artist.getinfo&artist=".urlencode($artist)."&api_key=$last_fm_key", NULL, true);
+		$xml = new SimpleXMLElement("http://ws.audioscrobbler.com/2.0/?method=artist.getinfo&artist=".urlencode($artist)."&api_key=$lfm_key", NULL, true);
 		
 		return (int)($xml->artist->stats->playcount[0]);
 	}
@@ -125,7 +125,7 @@ function get_split_index($tweet)
 	else return -1;
 }
 
-function extract_music_info($tweet, $artist_not = "")
+function extract_music_info($tweet, $lfm_key, $artist_not = "")
 {
 	$original_tweet = $tweet;
 	$tweet = str_ireplace("#nowplaying", "", $tweet);
@@ -156,7 +156,7 @@ function extract_music_info($tweet, $artist_not = "")
 	{
 		$str = trim($word)." $str";
 		$str = trim($str);
-		$play_count = get_artist_plays($str);
+		$play_count = get_artist_plays($str, $lfm_key);
 		
 		if ($play_count >= $min_plays)
 		{
@@ -174,7 +174,7 @@ function extract_music_info($tweet, $artist_not = "")
 	{
 		$str .= " ".trim($word);
 		$str = trim($str);
-		$play_count = get_artist_plays($str);
+		$play_count = get_artist_plays($str, $lfm_key);
 		
 		if ($play_count >= $min_plays)
 		{
@@ -209,23 +209,34 @@ function extract_music_info($tweet, $artist_not = "")
 		}
 	}
 	
-	if ($artist_loc == "before") $track_keyword = $words_after[0];
-	else $track_keyword = $words_before[0];
+	if ($artist_loc == "before") $track_terms = $terms_after;
+	else $track_terms = $terms_before;
 	
-	try
+	foreach ($track_terms as $key => $value)
 	{
-		$xml = new SimpleXMLElement("http://ws.audioscrobbler.com/2.0/?method=track.search&track=".urlencode($track_keyword)."&artist=".urlencode($music_info['artist'])."&api_key=$last_fm_key", NULL, true);
+		$track_match = "";
+		$artist_match = "";
 		
-		$music_info['track'] = (string)($xml->results->trackmatches->track->name[0]);
-		$music_info['artist'] = (string)($xml->results->trackmatches->track->artist[0]);
+		try
+		{
+			$xml = new SimpleXMLElement("http://ws.audioscrobbler.com/2.0/?method=track.search&track=".urlencode($key)."&artist=".urlencode($music_info['artist'])."&api_key=$lfm_key", NULL, true);
+			$track_match = (string)($xml->results->trackmatches->track->name[0]);
+			$artist_match = (string)($xml->results->trackmatches->track->artist[0]);
+			
+			if (stripos($artist_match, $music_info['artist']) !== false)
+			{
+				$music_info['track'] = $track_match;
+				$music_info['artist'] = $artist_match;
+			}
+		}
+		
+		catch (Exception $e) {}
 	}
-	
-	catch (Exception $e) {}
 	
 	if (empty($music_info['track']) && ($most_plays >= $min_plays) && empty($artist_not))
 	{
-		write_to_long("Couldn't find a matching track for the artist ".$music_info['artist'].". Searching again for a different artist.");
-		return extract_music_info($tweet, $music_info['artist']); //extracted wrong artist, try again with a different one
+		write_to_log("Couldn't find a matching track for the artist ".$music_info['artist'].". Searching again for a different artist.");
+		return extract_music_info($tweet, $lfm_key, $music_info['artist']); //extracted wrong artist, try again with a different one
 	}
 		
 	else if ($most_plays < $min_plays) return array(); //this probably isn't a valid artist, so skip and return an empty array
@@ -285,6 +296,7 @@ function strip_feat($str)
 }
 
 $replies = search("to%3Atweetmetunes");
+$reply_count = 0;
 //var_dump($replies);
 
 foreach ($replies as $reply)
@@ -316,8 +328,10 @@ foreach ($replies as $reply)
 		{
 			mysqli_query($db, "UPDATE reply SET query = '1' WHERE id = '$reply_id'");
 			
-			if (recommend($connection, $user, $reply['text'], $reply_id))
+			if (recommend($connection, $user, $reply['text'], $reply_id, $last_fm_key))
 				mysqli_query($db, "UPDATE reply SET recommended = '1' WHERE id = '$reply_id'");
+				
+			$reply_count++;
 		}
 		
 		else
@@ -325,6 +339,7 @@ foreach ($replies as $reply)
 	}
 }
 
+if ($reply_count == 0) write_to_log("No new queries found.");
 write_to_log("Done.");
 ?>
 </body>
