@@ -1,0 +1,31 @@
+body
+{
+	background-color: black;
+	color: white;
+}
+
+a:link
+{
+	color: lightblue;
+}
+
+.logo
+{
+	margin-top: 75px;
+}
+
+.nav
+{
+	margin-bottom: 50px;
+}
+
+.searchbox
+{
+	width: 400px;
+	margin-right: 5px;
+}
+
+#footer
+{
+	margin-top: 75px;
+}

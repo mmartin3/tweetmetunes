@@ -9,8 +9,6 @@
 <?php
 require_once('twitteroauth/twitteroauth/twitteroauth.php');
 include 'config.php';
-include 'db_connect.php';
- 
 $connection = new TwitterOAuth($consumer_key, $consumer_secret , $oauth_token , $oauth_token_secret);
 date_default_timezone_set("America/New York");
 set_time_limit(300);
@@ -33,7 +31,7 @@ function tweet($conn, $status)
 	return $result;
 }
 
-function recommend($conn, $u, $text, $reply_id, $lfm_key)
+function recommend($conn, $u, $text, $lfm_key)
 {	
 	$query_music = str_replace("\"", "", split_query($text));
 	$now_playing = search("%23nowplaying+$query_music");
@@ -78,7 +76,7 @@ function write_to_log($str)
 function is_valid($query)
 {
 	write_to_log("Evaluating query $query.");
-	$fmt = "@tweetmetunes like ";
+	$fmt = "like ";
 	
 	if ((stripos(trim($query), $fmt) === 0) && (strlen(trim($query)) > strlen($fmt)))
 	{
@@ -95,7 +93,7 @@ function is_valid($query)
 
 function split_query($query)
 {
-	$fmt = "@tweetmetunes like ";
+	$fmt = "like ";
 	$query = trim($query);
 		
 	return substr($query, strlen($fmt));
@@ -133,7 +131,7 @@ function extract_music_info($tweet, $lfm_key, $artist_not = "")
 	$tweet = str_ireplace($split_index, " $split_index ", $tweet);
 	$music_info = array();
 	
-	if ($split_index == -1 || (stripos($tweet, "@") !== false))
+	if ($split_index == -1)
 		return $music_info; //this tweet is unusable, so return an empty array
 	
 	$split_index_pos = stripos($tweet, $split_index);
@@ -154,7 +152,9 @@ function extract_music_info($tweet, $lfm_key, $artist_not = "")
 	
 	foreach ($words_before as $word)
 	{
-		$str = trim($word)." $str";
+		$word = trim($word);
+		if (substr($word, 0, 1) == "@") $word = lookup_user($word);
+		$str = "$word $str";
 		$str = trim($str);
 		$play_count = get_artist_plays($str, $lfm_key);
 		
@@ -172,7 +172,9 @@ function extract_music_info($tweet, $lfm_key, $artist_not = "")
 	
 	foreach ($words_after as $word)
 	{
-		$str .= " ".trim($word);
+		$word = trim($word);
+		if (substr($word, 0, 1) == "@") $word = lookup_user($word);
+		$str .= " ".$word;
 		$str = trim($str);
 		$play_count = get_artist_plays($str, $lfm_key);
 		
@@ -212,25 +214,28 @@ function extract_music_info($tweet, $lfm_key, $artist_not = "")
 	if ($artist_loc == "before") $track_terms = $terms_after;
 	else $track_terms = $terms_before;
 	
-	foreach ($track_terms as $key => $value)
+	if (!empty($music_info['artist']))
 	{
-		$track_match = "";
-		$artist_match = "";
-		
-		try
+		foreach ($track_terms as $key => $value)
 		{
-			$xml = new SimpleXMLElement("http://ws.audioscrobbler.com/2.0/?method=track.search&track=".urlencode($key)."&artist=".urlencode($music_info['artist'])."&api_key=$lfm_key", NULL, true);
-			$track_match = (string)($xml->results->trackmatches->track->name[0]);
-			$artist_match = (string)($xml->results->trackmatches->track->artist[0]);
+			$track_match = "";
+			$artist_match = "";
 			
-			if (stripos($artist_match, $music_info['artist']) !== false)
+			try
 			{
-				$music_info['track'] = $track_match;
-				$music_info['artist'] = $artist_match;
+				$xml = new SimpleXMLElement("http://ws.audioscrobbler.com/2.0/?method=track.search&track=".urlencode($key)."&artist=".urlencode($music_info['artist'])."&api_key=$lfm_key", NULL, true);
+				$track_match = (string)($xml->results->trackmatches->track->name[0]);
+				$artist_match = (string)($xml->results->trackmatches->track->artist[0]);
+				
+				if ((stripos($artist_match, $music_info['artist']) !== false) || (stripos($music_info['artist'], $artist_match) !== false))
+				{
+					$music_info['track'] = $track_match;
+					$music_info['artist'] = $artist_match;
+				}
 			}
+			
+			catch (Exception $e) {}
 		}
-		
-		catch (Exception $e) {}
 	}
 	
 	if (empty($music_info['track']) && ($most_plays >= $min_plays) && empty($artist_not))
@@ -295,51 +300,51 @@ function strip_feat($str)
 	return $str;
 }
 
-$replies = search("to%3Atweetmetunes");
-$reply_count = 0;
-//var_dump($replies);
-
-foreach ($replies as $reply)
+function lookup_name($user)
 {
-	$user = mysql_escape_string($reply['from_user']);
-	$time = mysql_escape_string($reply['created_at']);
-	$result = mysqli_query($db, "SELECT * FROM reply WHERE `from` = '$user' AND `time` = '$time'");
-	$is_new = true;
-	
-	while ($row = mysqli_fetch_assoc($result))
-	{
-		if (($row['recommended'] == 1) || ($row['query'] == 0))
-			$is_new = false;
-	}
-	
-	if ($is_new)
-	{
-		write_to_log("Found new @reply from user @$user: ".$reply['text']);
-		
-		mysqli_query($db, "INSERT INTO reply (`from`, `time`) VALUES ('$user', '$time')");
-		$result = mysqli_query($db, "SELECT LAST_INSERT_ID() AS reply_id FROM reply");
-		
-		while ($row = mysqli_fetch_assoc($result))
-		{
-			$reply_id = $row['reply_id'];
-		}
-		
-		if (is_valid($reply['text']))
-		{
-			mysqli_query($db, "UPDATE reply SET query = '1' WHERE id = '$reply_id'");
-			
-			if (recommend($connection, $user, $reply['text'], $reply_id, $last_fm_key))
-				mysqli_query($db, "UPDATE reply SET recommended = '1' WHERE id = '$reply_id'");
-				
-			$reply_count++;
-		}
-		
-		else
-			mysqli_query($db, "UPDATE reply SET query = '0' WHERE id = '$reply_id'");
-	}
+	$user = str_ireplace("@", "", $user);
+	$lookup = file_get_contents("http://api.twitter.com/1/users/lookup.json?screen_name=$user");
+	if ($lookup === false) die('Error occurred.');
+	$result = json_decode($search, true);
+	$name = trim($result['name']);
+	write_to_log("Found name for user @$user: $name.");
+	return $name;
 }
 
-if ($reply_count == 0) write_to_log("No new queries found.");
+function list_direct_messages($conn)
+{
+	write_to_log("Retrieving direct messages...");
+	return json_decode(json_encode($conn->get('direct_messages')), true);
+}
+
+function delete_message($conn, $id)
+{
+	write_to_log("Deleting message #$id.");
+	return json_decode(json_encode($conn->post('direct_messages/destroy', array("id" => $id)), true));
+}
+
+$direct_messages = list_direct_messages($connection);
+$dm_count = 0;
+
+foreach ($direct_messages as $dm)
+{
+	$user = mysql_escape_string($dm['sender_screen_name']);
+	$dm_id = mysql_escape_string($dm['id']);
+	write_to_log("Found new direct message from user @$user: ".$dm['text']);
+	
+	if (is_valid($dm['text']))
+	{
+		if (recommend($connection, $user, $dm['text'], $last_fm_key))
+			delete_message($connection, $dm_id);
+			
+		$dm_count++;
+	}
+	
+	else
+		delete_message($connection, $dm_id);
+}
+
+if ($dm_count == 0) write_to_log("No new queries found.");
 write_to_log("Done.");
 ?>
 </body>
