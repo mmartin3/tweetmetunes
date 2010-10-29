@@ -12,7 +12,7 @@ function about()
 
 function tweetMeTunes()
 {
-	parent.location = "http://twitter.com/?status=d tweetmetunes like " + document.getElementById('q').value;
+	parent.location = "http://twitter.com/?status=" + document.getElementById('qtype').value + document.getElementById('q').value;
 }
 
 function searchNowPlaying()
@@ -22,7 +22,7 @@ function searchNowPlaying()
 
 function submitQuery()
 {
-	document.getElementById('status').value = 'd tweetmetunes like ' + document.getElementById('q').value;
+	document.getElementById('status').value = document.getElementById('qtype').value + document.getElementById('q').value;
 }
 </script>
 </head>
@@ -35,7 +35,13 @@ function submitQuery()
 </p>
 <form action="http://twitter.com/" method="get" onSubmit="submitQuery();">
 <input type="hidden" name="status" id="status" />
-<p><input class="searchbox" id="q" name="q" type="text" /></p>
+<p>
+<select id="qtype">
+<option value="@tweetmetunes like ">@reply</option>
+<option value="d tweetmetunes like ">direct message</option>
+</select>
+<input class="searchbox" id="q" name="q" type="text" />
+</p>
 </form>
 <p>
 <input type="button" value=" Tweet me tunes! " onClick="tweetMeTunes();" />&nbsp;
@@ -43,8 +49,8 @@ function submitQuery()
 </p>
 <div id="footer">
 <p><b>Maintained by:</b> 
-<a href="http://twitter.com/electrovert" target="_blank">Matt Martin</a> and Zak Taccardi</p>
-<p><b>Last updated:</b> October 27, 2010</p>
+<a href="http://twitter.com/electrovert" target="_blank">Matt Martin</a> and <a href="http://twitter.com/ZakTaccardi" target="_blank">Zak Taccardi</a></p>
+<p><b>Last updated:</b> October 28, 2010</p>
 </div>
 </center>
 </body>
