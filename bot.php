@@ -44,6 +44,7 @@ function recommend($conn, $u, $text, $lfm_key)
 		
 		foreach ($also_playing as $result2)
 		{
+			write_to_log("Found similar tweet: ".$result2['text']);
 			$music_data = extract_music_data($conn, $result2['text'], $lfm_key);
 		
 			if (!empty($music_data['artist']) && !empty($music_data['track']))
@@ -54,6 +55,9 @@ function recommend($conn, $u, $text, $lfm_key)
 				
 				if (empty($tweet_info['error'])) return true;
 			}
+			
+			else
+				write_to_log("Could not extract music data.");
 			
 			$music_data = array();
 		}
@@ -173,7 +177,7 @@ function extract_music_data($conn, $tweet, $lfm_key, $artist_not = "")
 			$terms_before[$str] = $play_count;
 		}
 			
-		else
+		else if (!empty($str))
 			write_to_log("$str is not a valid artist.");
 	}
 	
@@ -199,7 +203,7 @@ function extract_music_data($conn, $tweet, $lfm_key, $artist_not = "")
 			$terms_after[$str] = $play_count;
 		}
 			
-		else
+		else if (!empty($str))
 			write_to_log("$str is not a valid artist.");
 	}
 	
