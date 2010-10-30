@@ -34,8 +34,10 @@ function tweet($conn, $status)
 }
 
 function recommend($conn, $u, $text, $lfm_key)
-{	
-	$query_music = str_replace("\"", "", split_query($text));
+{
+	$query_music = split_query($text);
+	$original_query = $query_music;
+	$query_music = str_replace("\"", "", $query_music);
 	$now_playing = search("%23nowplaying+$query_music");
 	
 	foreach ($now_playing as $result)
@@ -63,8 +65,8 @@ function recommend($conn, $u, $text, $lfm_key)
 		}
 	}
 	
-	write_to_log("Unable to find music similar to $query_music.");
-	$tweet_info = tweet($conn, "@$u Sorry, I couldn't find any music similar to $query_music. Please try a different query.");
+	write_to_log("Unable to find music similar to $original_query.");
+	$tweet_info = tweet($conn, "@$u Sorry, I couldn't find any music similar to $original_query. Please try a different query.");
 	if (empty($tweet_info['error'])) return true;
 	
 	return false;
@@ -126,7 +128,7 @@ function get_split_index($tweet)
 	if (stripos($tweet, "by") !== false) return "by";
 	else if (stripos($tweet, "-") !== false) return "-";
 	else if (stripos($tweet, "'s") !== false) return "'s";
-	else if (stripos($tweet, "\"") !== false) return "\"";
+	else if (stripos($tweet, "&quot;") !== false) return "&quot;";
 	else return -1;
 }
 
@@ -230,19 +232,35 @@ function extract_music_data($conn, $tweet, $lfm_key, $artist_not = "")
 		}
 	}
 	
-	if ($artist_loc == "before") $track_terms = $terms_after;
-	else $track_terms = $terms_before;
+	if ($artist_loc == "before") $track_words = $words_after;
+	else $track_words = $words_before;
+	$track_terms = array();
+	$str = "";
+	$i = 0;	
+	
+	foreach ($track_words as $word)
+	{
+		$word = trim($word);
+		
+		if ($artist_loc == "after")
+			$str = "$word $str";
+			
+		else
+			$str .= " ".$word;
+			
+		$track_terms[$i++] = $str;
+	}
 	
 	if (!empty($music_data['artist']))
 	{
-		foreach ($track_terms as $key => $value)
+		foreach ($track_terms as $term)
 		{
 			$track_match = "";
 			$artist_match = "";
 			
 			try
 			{
-				$xml = new SimpleXMLElement("http://ws.audioscrobbler.com/2.0/?method=track.search&track=".urlencode($key)."&artist=".urlencode($music_data['artist'])."&api_key=$lfm_key", NULL, true);
+				$xml = new SimpleXMLElement("http://ws.audioscrobbler.com/2.0/?method=track.search&track=".urlencode($term)."&artist=".urlencode($music_data['artist'])."&api_key=$lfm_key", NULL, true);
 				$track_match = (string)($xml->results->trackmatches->track->name[0]);
 				$artist_match = (string)($xml->results->trackmatches->track->artist[0]);
 				
@@ -260,7 +278,7 @@ function extract_music_data($conn, $tweet, $lfm_key, $artist_not = "")
 	if (empty($music_data['track']) && ($most_plays >= $min_plays) && empty($artist_not))
 	{
 		write_to_log("Couldn't find a matching track for the artist ".$music_data['artist'].". Searching again for a different artist.");
-		return extract_music_data($tweet, $lfm_key, $music_data['artist']); //extracted wrong artist, try again with a different one
+		return extract_music_data($conn, $tweet, $lfm_key, $music_data['artist']); //extracted wrong artist, try again with a different one
 	}
 		
 	else if ($most_plays < $min_plays) return array(); //this probably isn't a valid artist, so skip and return an empty array
@@ -373,6 +391,9 @@ function lookup_user_by_id($conn, $uid)
 
 function lookup_user_by_name($conn, $screen_name)
 {
+	$screen_name = str_replace("@", "", $screen_name);
+	$screen_name = str_replace(htmlspecialchars("@"), "", $screen_name);
+	$screen_name = str_replace(urlencode("@"), "", $screen_name);
 	$lookup = json_decode(json_encode($conn->get('users/lookup', array("screen_name" => $screen_name))), true);
 	return $lookup[0];
 }
@@ -389,9 +410,8 @@ foreach ($direct_messages as $dm)
 	
 	if (is_valid($dm['text']))
 	{
-		if (recommend($connection, $user, $dm['text'], $last_fm_key))
-			delete_message($connection, $dm_id);
-			
+		recommend($connection, $user, $dm['text'], $last_fm_key);
+		delete_message($connection, $dm_id);	
 		$dm_count++;
 	}
 	
