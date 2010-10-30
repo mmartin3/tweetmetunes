@@ -9,20 +9,31 @@ a:link
 	color: lightblue;
 }
 
-.logo
+td
 {
-	margin-top: 75px;
+	vertical-align: top;
 }
 
-.nav
+p.ex
 {
-	margin-bottom: 50px;
+	padding-left: 8px;
+}
+
+code
+{
+	font-size: 1.1em !important;
+}
+
+.logo
+{
+	padding-top: 10px;
 }
 
 .searchbox
 {
 	width: 400px;
 	margin-right: 5px;
+	margin-top: 50px;
 }
 
 #footer
@@ -33,4 +44,25 @@ a:link
 #qtype
 {
 	margin-right: 2px;
+}
+
+#left-widget
+{
+	width: 275px;
+	margin-left: 75px;
+	margin-right: 40px;
+	font-size: 0.8em;
+}
+
+#right-widget
+{
+	width: 275px;
+	margin-right: 75px;
+	margin-left: 40px;
+}
+
+#content-table
+{
+	margin: auto;
+	padding-top: 40px;
 }
