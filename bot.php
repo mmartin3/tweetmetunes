@@ -75,7 +75,7 @@ function recommend($conn, $u, $text, $lfm_key)
 function write_to_log($str)
 {
 	$str = "[".date("Y-m-d H:s")."] $str";
-	echo "<p>$str</p>";
+	echo "<p>$str</p>\n";
 	$f = fopen("tmtlog.txt", 'a') or die("can't open file");
 	fwrite($f, "$str\r\n");
 	fclose($f);
@@ -125,10 +125,12 @@ function get_artist_plays($artist, $lfm_key)
 
 function get_split_index($tweet)
 {
-	if (stripos($tweet, "by") !== false) return "by";
+	if (stripos($tweet, " by ") !== false) return " by ";
 	else if (stripos($tweet, "-") !== false) return "-";
 	else if (stripos($tweet, "'s") !== false) return "'s";
 	else if (stripos($tweet, "&quot;") !== false) return "&quot;";
+	else if (stripos($tweet, "~") !== false) return "~";
+	else if (stripos($tweet, "/") !== false) return "/";
 	else return -1;
 }
 
@@ -150,14 +152,8 @@ function extract_music_data($conn, $tweet, $lfm_key, $artist_not = "")
 	$words_after = explode(" ", $str_after);
 	$terms_before = array();
 	$terms_after = array();
+	$min_plays = 10000;
 	$str = "";
-	$min_plays = 50000;
-	
-	if ((stripos($str_before, "http://") !== false) || (stripos($str_before, "www.") !== false) || 
-		(stripos($str_before, ".com") !== false) || (stripos($str_after, "http://") !== false) ||
-		(stripos($str_after, "www.") !== false) || (stripos($str_after, ".com") !== false) ||
-		(count($words_before) > 10) || (count($words_after) > 10))
-			return $music_data;
 	
 	foreach ($words_before as $word)
 	{
@@ -235,8 +231,8 @@ function extract_music_data($conn, $tweet, $lfm_key, $artist_not = "")
 	if ($artist_loc == "before") $track_words = $words_after;
 	else $track_words = $words_before;
 	$track_terms = array();
+	$i = 0;
 	$str = "";
-	$i = 0;	
 	
 	foreach ($track_words as $word)
 	{
@@ -247,7 +243,7 @@ function extract_music_data($conn, $tweet, $lfm_key, $artist_not = "")
 			
 		else
 			$str .= " ".$word;
-			
+		
 		$track_terms[$i++] = $str;
 	}
 	
@@ -257,6 +253,7 @@ function extract_music_data($conn, $tweet, $lfm_key, $artist_not = "")
 		{
 			$track_match = "";
 			$artist_match = "";
+			$term = str_replace("&quot;", "", $term);
 			
 			try
 			{
@@ -264,7 +261,7 @@ function extract_music_data($conn, $tweet, $lfm_key, $artist_not = "")
 				$track_match = (string)($xml->results->trackmatches->track->name[0]);
 				$artist_match = (string)($xml->results->trackmatches->track->artist[0]);
 				
-				if (stripos($music_data['artist'], $artist_match) !== false)
+				if (strcasecmp($artist_match, $music_data['artist']) == 0)
 				{
 					$music_data['track'] = $track_match;
 					$music_data['artist'] = $artist_match;
@@ -272,6 +269,9 @@ function extract_music_data($conn, $tweet, $lfm_key, $artist_not = "")
 			}
 			
 			catch (Exception $e) {}
+			
+			if ($track_match == "") write_to_log("$term is not a valid track by ".$music_data['artist'].".");
+			else write_to_log("$track_match is a valid track by $artist_match.");
 		}
 	}
 	
