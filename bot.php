@@ -1,9 +1,14 @@
+<?php if ((!empty($_GET['delay'])) && ($_GET['delay'] < 30)) header("location:bot.php"); ?>
 <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" 
   "http://www.w3.org/TR/html4/loose.dtd">
 <html lang="en">
 <head>
 <title>Tweet Me Tunes bot</title>
-<meta http-equiv="refresh" content="300">
+<?php
+$delay = $_GET['delay'];
+if (empty($delay)) $delay = 300;
+?>
+<meta http-equiv="refresh" content="<?php echo $delay ?>">
 </head>
 <body>
 <?php
@@ -424,6 +429,8 @@ if ($dm_count == 0) write_to_log("No new direct messages found.");
 $replies = search("to%3Atweetmetunes");
 $reply_count = 0;
 
+write_to_log("Searching for @replies...");
+
 foreach ($replies as $reply)
 {
 	$user = mysql_escape_string($reply['from_user']);
@@ -467,6 +474,19 @@ foreach ($replies as $reply)
 if ($reply_count == 0) write_to_log("No new @replies found.");
 
 write_to_log("Done.");
+
+echo "<br />\n";
+echo "<center>\n";
+echo "<p><a href='http://tinyurl.com/tweetmetunes' target='_blank'>Tweet Me Tunes portal</a></p>\n";
+echo "<p><a href='http://twitter.com/tweetmetunes' target='_blank'>Tweet Me Tunes (@tweetmetunes) on Twitter</a></p>\n";
+echo "<p><a href='bot.php?delay=$delay'>Tweet Me Tunes bot (run again)</a></p>\n";
+echo "<p><a href='tmtlog.txt' target='_blank'>Tweet Me Tunes bot activity log</a></p>\n";
+echo "<form action='bot.php' method='get'>\n";
+echo "<br />\n";
+echo "<p><b>Set delay:</b>&nbsp;<input style='width: 40px;' name='delay' value='$delay' />&nbsp;seconds&nbsp;&nbsp;";
+echo "<input type='submit' value=' Submit ' /></p>\n";
+echo "</form>\n";
+echo "</center>\n";
 ?>
 </body>
 </html>
