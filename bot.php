@@ -1,4 +1,4 @@
-<?php if ((!empty($_GET['delay'])) && ($_GET['delay'] < 30)) header("location:bot.php"); ?>
+<?php if ((!empty($_GET['delay'])) && ($_GET['delay'] < 60)) header("location:bot.php"); ?>
 <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" 
   "http://www.w3.org/TR/html4/loose.dtd">
 <html lang="en">
@@ -475,17 +475,21 @@ if ($reply_count == 0) write_to_log("No new @replies found.");
 
 write_to_log("Done.");
 
-echo "<br />\n";
 echo "<center>\n";
-echo "<p><a href='http://tinyurl.com/tweetmetunes' target='_blank'>Tweet Me Tunes portal</a></p>\n";
-echo "<p><a href='http://twitter.com/tweetmetunes' target='_blank'>Tweet Me Tunes (@tweetmetunes) on Twitter</a></p>\n";
-echo "<p><a href='bot.php?delay=$delay'>Tweet Me Tunes bot (run again)</a></p>\n";
-echo "<p><a href='tmtlog.txt' target='_blank'>Tweet Me Tunes bot activity log</a></p>\n";
-echo "<form action='bot.php' method='get'>\n";
 echo "<br />\n";
+echo "<form action='bot.php' method='get'>\n";
 echo "<p><b>Set delay:</b>&nbsp;<input style='width: 40px;' name='delay' value='$delay' />&nbsp;seconds&nbsp;&nbsp;";
 echo "<input type='submit' value=' Submit ' /></p>\n";
 echo "</form>\n";
+echo "<br />\n";
+echo "<p>";
+echo "<a href='http://tinyurl.com/tweetmetunes' target='_blank'>Tweet Me Tunes portal</a> / ";
+echo "<a href='http://twitter.com/tweetmetunes' target='_blank'>@tweetmetunes on Twitter</a> / ";
+echo "<a href='bot.php?delay=$delay'>Tweet Me Tunes bot (run again)</a> / ";
+echo "<a href='https://github.com/mmartin3/tweetmetunes' target='_blank'>Source @ GitHub</a> / ";
+echo "<a href='tmtlog.txt' target='_blank'>Activity log</a>";
+echo "</p>\n";
+echo "<br />\n";
 echo "</center>\n";
 ?>
 </body>
