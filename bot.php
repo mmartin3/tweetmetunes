@@ -1,13 +1,18 @@
-<?php if ((!empty($_GET['delay'])) && ($_GET['delay'] < 60)) header("location:bot.php"); ?>
+<?php
+if ((!empty($_GET['delay'])) && ($_GET['delay'] < 60))
+{
+	header("location:bot.php");
+	exit;
+}
+
+$delay = $_GET['delay'];
+if (empty($delay)) $delay = 300;
+?>
 <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" 
   "http://www.w3.org/TR/html4/loose.dtd">
 <html lang="en">
 <head>
 <title>Tweet Me Tunes bot</title>
-<?php
-$delay = $_GET['delay'];
-if (empty($delay)) $delay = 300;
-?>
 <meta http-equiv="refresh" content="<?php echo $delay ?>">
 </head>
 <body>
@@ -18,7 +23,7 @@ include 'db_connect.php';
 
 $connection = new TwitterOAuth($consumer_key, $consumer_secret , $oauth_token , $oauth_token_secret);
 date_default_timezone_set("America/New York");
-set_time_limit(300);
+set_time_limit($delay);
 error_reporting(0);
 
 function search($q)
@@ -310,10 +315,9 @@ function get_youtube_link($music_data)
 		return $short_link;
 	}
 	
-	catch (Exception $e)
-	{
-		return "";
-	}
+	catch (Exception $e) {}
+	
+	return "";
 }
 
 function strip_feat($str)
