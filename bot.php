@@ -1,7 +1,7 @@
 <?php
 if ((!empty($_GET['delay'])) && ($_GET['delay'] < 60))
 {
-	header("location:bot.php");
+	header("location:bot.php?delay=60");
 	exit;
 }
 
