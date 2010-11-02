@@ -1,7 +1,9 @@
 <?php
-if ((!empty($_GET['delay'])) && ($_GET['delay'] < 60))
+$min_delay = 60;
+
+if ((!empty($_GET['delay'])) && ($_GET['delay'] < $min_delay))
 {
-	header("location:bot.php?delay=60");
+	header("location:bot.php?delay=$min_delay");
 	exit;
 }
 
