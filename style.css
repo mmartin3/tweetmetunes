@@ -22,11 +22,8 @@ td
 p.ex
 {
 	padding-left: 8px;
-}
-
-code
-{
-	font-size: 1.1em !important;
+	margin-top: 1px !important;
+	margin-bottom: 1px !important;
 }
 
 .logo
@@ -54,9 +51,10 @@ code
 #left-widget
 {
 	width: 275px;
+	height: 440px;
 	margin-left: 75px;
 	margin-right: 40px;
-	font-size: 0.8em;
+	font-size: 0.75em;
 	background-color: #333333;
 	padding: 5px 5px 5px 5px;
 }
