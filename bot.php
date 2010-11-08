@@ -504,11 +504,11 @@ function lookup_user_by_name($conn, $screen_name)
 
 function rate($conn, $db, $dm)
 {
-	$uid = mysql_real_escape_string($dm['sender_id'], $db);
+	$uid = mysql_escape_string($dm['sender_id'], $db);
 	$u = $dm['sender_screen_name'];
 	
 	$fmt = " like ";
-	$artist = mysql_real_escape_string(trim(substr($dm['text'], stripos($dm['text'], $fmt) + strlen($fmt))), $db);
+	$artist = mysql_escape_string(trim(substr($dm['text'], stripos($dm['text'], $fmt) + strlen($fmt))), $db);
 	
 	if (stripos($dm['text'], "more like ") !== false)
 	{
@@ -594,9 +594,9 @@ $dm_count = 0;
 
 foreach ($direct_messages as $dm)
 {
-	$user = mysql_real_escape_string($dm['sender_screen_name'], $db);
-	$dm_id = mysql_real_escape_string($dm['id'], $db);
-	$settings = get_user_settings($db, mysql_real_escape_string($dm['sender_id'], $db));
+	$user = mysql_escape_string($dm['sender_screen_name']);
+	$dm_id = mysql_escape_string($dm['id']);
+	$settings = get_user_settings($db, mysql_escape_string($dm['sender_id']));
 	write_to_log("Found new direct message from user @$user: ".$dm['text']);
 	
 	if (is_valid($dm['text']))
