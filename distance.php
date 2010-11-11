@@ -35,8 +35,10 @@ function pearson($tags1, $tags2)
 		return ($sum_xy - ($sum_x * $sum_y) / $n) / $denominator;
 }
 
-function compute_nearest_neighbors($arr, $k)
+function get_nearest_neighbors($arr, $k = 1)
 {
+	arsort($arr);
 	
+	return array_slice($arr, 0, $k, true);
 }
 ?>
