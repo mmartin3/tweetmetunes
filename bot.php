@@ -8,7 +8,7 @@ if ((!empty($_GET['delay'])) && ($_GET['delay'] < $min_delay))
 }
 
 $delay = $_GET['delay'];
-if (empty($delay)) $delay = 300;
+if (empty($delay)) $delay = 600;
 ?>
 <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" 
   "http://www.w3.org/TR/html4/loose.dtd">
@@ -23,10 +23,12 @@ require_once('twitteroauth/twitteroauth/twitteroauth.php');
 include 'config.php';
 include 'db_connect.php';
 
-$connection = new TwitterOAuth($consumer_key, $consumer_secret , $oauth_token , $oauth_token_secret);
+$conn = new TwitterOAuth($consumer_key, $consumer_secret, $oauth_token, $oauth_token_secret);
 date_default_timezone_set("America/New York");
 set_time_limit($delay);
 error_reporting(0);
+
+include 'distance.php';
 
 function search($q)
 {
@@ -36,8 +38,10 @@ function search($q)
 	return $result['results'];
 }
 
-function tweet($conn, $status)
+function tweet($status)
 {
+	global $conn;
+	
 	write_to_log("Sending tweet: $status");
 	$result = json_decode(json_encode($conn->post('statuses/update', array('status' => $status))), true);
 	if (empty($result['error'])) write_to_log("Tweet posted successfully.");
@@ -45,40 +49,53 @@ function tweet($conn, $status)
 	return $result;
 }
 
-function recommend($conn, $u, $text, $lfm_key, $settings)
+function recommend($u, $text, $settings)
 {
+	global $conn, $last_fm_key;
+	
 	$query_music = split_query($text);
 	$original_query = $query_music;
 	$query_music = str_replace("\"", "", $query_music);
-	$now_playing = search("%23nowplaying+OR+%23np+$query_music");
+	$query_split_index = get_split_index($query_music);
+	$now_playing = search("%23nowplaying+OR+%23np+".stripslashes($query_music));
+	$matches = array();
+	$match_count = 1;
 	
 	write_to_log("Getting Last.fm data for $original_query...");
-	$query_data = extract_music_data($conn, $query_music, $lfm_key, "", false, 100);
+	$query_data = extract_music_data(stripslashes($query_music), "", false, 100);
 	
 	if (!empty($query_data['artist']))
-		$query_tags = get_tags_for_artist($query_data['artist'], $lfm_key);
+		$query_tags = get_tags_for_artist($query_data['artist']);
+		
+	else if (empty($query_split_index))
+		return tweet("@$u Sorry, $query_music doesn't seem to be a valid artist. Please try a different query.");
 		
 	else
-		return tweet($conn, "@$u Sorry, $query_music doesn't seem to be a valid artist. Please try a different query.");
+		return tweet("@$u Sorry, $query_music doesn't seem to contain a valid artist and/or track. Please try a different query.");
 	
 	foreach ($now_playing as $result)
 	{
-		$also_playing = search("%23nowplaying+OR+%23np&lang=en&nots=$query_music&from=".$result['from_user']);
+		if ($match_count > 5)
+				break;
+				
+		$also_playing = search("%23nowplaying+OR+%23np&nots=$query_music&from=".$result['from_user']);
 		
 		foreach ($also_playing as $result2)
 		{
+			if ($match_count > 5)
+				break;
+			
 			write_to_log("Found similar tweet: ".$result2['text']);
-			$music_data = extract_music_data($conn, $result2['text'], $lfm_key);
+			$music_data = extract_music_data($result2['text']);
 		
 			if (!empty($music_data['artist']) && !empty($music_data['track']))
 			{
 				if (empty($settings['dislikes']) || (!in_array($music_data['artist'], $settings['dislikes'])))
 				{
-					write_to_log("Recommending ".$music_data['artist']." - ".$music_data['track']." to @$u.");
-				
-					$tweet_info = tweet($conn, "@$u You might like ".$music_data['artist']." - ".$music_data['track'].". ".get_youtube_link($music_data));
-				
-					if (empty($tweet_info['error'])) return true;
+					$music_data['match_no'] = $match_count;
+					$matches[$match_count] = $music_data;
+					write_to_log("Saved match #$match_count: ".$music_data['artist']." - ".$music_data['track'].".");
+					$match_count++;
 				}
 				
 				else
@@ -92,10 +109,68 @@ function recommend($conn, $u, $text, $lfm_key, $settings)
 		}
 	}
 	
-	write_to_log("Unable to find music similar to $original_query.");
-	$tweet_info = tweet($conn, "@$u Sorry, I couldn't find any music similar to $original_query. Please try a different query.");
-	if (empty($tweet_info['error'])) return true;
+	if (!empty($matches))
+	{
+		$distances = array();
+		$query_tags = get_tags_for_artist($query_data['artist']);
+		
+		foreach ($matches as $match)
+		{
+			$match_tags = get_tags_for_artist($match['artist']);
+			$match_num = $match['match_no'];
+			$pearson = pearson($query_tags, $match_tags);
+			$pearson_base = $pearson;
+			$like_count = 0;
+			$dislike_count = 0;
+			write_to_log("#$match_num: Pearson correlation coefficient for ".$match['artist']." with respect to ".$query_data['artist'].": $pearson");
+			
+			foreach ($settings['likes'] as $like)
+			{
+				$like_tags = get_tags_for_artist($like);
+				$p2 = pearson($like_tags, $match_tags);
+				write_to_log("#$match_num: Pearson correlation coefficient for ".$match['artist']." with respect to $like (liked by @$u): $p2");
+				$pearson += $p2;
+				$like_count++;
+			}
+			
+			foreach ($settings['dislikes'] as $dislike)
+			{
+				$dislike_tags = get_tags_for_artist($dislike);
+				$p2 = pearson($dislike_tags, $match_tags) * -1;
+				write_to_log("#$match_num: Pearson correlation coefficient for ".$match['artist']." with respect to $dislike (disliked by @$u): $p2");
+				$pearson += $p2;
+				$dislike_count++;
+			}
+			
+			if (($like_count + $dislike_count) > 0)
+				$pearson /= ($like_count + $dislike_count);
+			
+			if (($pearson != $pearson_base) && !empty($pearson))
+				write_to_log("#$match_num: Adjusted pearson for ".$match['artist']." with respect to ".$query_data['artist']." and explicit ratings: $pearson");
+			
+			$distances[$match_num] = $pearson;
+		}
+		
+		$k = 5;
+		if (count($distances) < 5) $k = count($distances);
+		
+		$nearest_neighbors = get_nearest_neighbors($distances, $k);
+		
+		foreach ($nearest_neighbors as $key => $value)
+		{
+			$music_data = $matches[$key];
+			write_to_log("Recommending ".$music_data['artist']." - ".$music_data['track']." to @$u.");
+				
+			$tweet_info = tweet("@$u You might like ".$music_data['artist']." - ".$music_data['track'].". ".get_youtube_link($music_data));
+			
+			if (empty($tweet_info['error'])) return true;
+		}
+	}
 	
+	write_to_log("Unable to find music similar to $original_query.");
+	$tweet_info = tweet("@$u Sorry, I couldn't find any music similar to ".stripslashes($original_query).". Please try a different query.");
+	if (empty($tweet_info['error'])) return true;
+		
 	return false;
 }
 
@@ -110,36 +185,38 @@ function write_to_log($str)
 
 function is_valid($query)
 {
-	$query = trim(str_ireplace("@tweetmetunes", "", $query));
+	$query = trim($query);
 	write_to_log("Evaluating query $query.");
 	$fmt = "like ";
 	
 	if ((stripos(trim($query), $fmt) === 0) && (strlen(trim($query)) > strlen($fmt)))
-	{
-		write_to_log("Validity confirmed.");
 		return true;
-	}
 	
 	else
-	{
-		write_to_log("Invalid query.");
 		return false;
-	}
 }
 
 function is_rating($query)
 {
-	if ((stripos(trim($query), "more like") === 0) || (stripos(trim($query), "less like") === 0))
-	{
-		write_to_log("$query is a valid rating tweet.");
+	$query = trim($query);
+	
+	if ((stripos($query, "more like") === 0) || (stripos($query, "less like") === 0))
 		return true;
-	}
 	
 	else
-	{
-		write_to_log("Not a valid rating.");
 		return false;
-	}
+}
+
+function is_reset($query)
+{
+	$query = trim($query);
+	$fmt = "reset ";
+	
+	if ((stripos($query, $fmt) === 0) && (strlen($query) > strlen($fmt)))
+		return true;
+	
+	else
+		return false;
 }
 
 function split_query($query)
@@ -150,14 +227,16 @@ function split_query($query)
 	return substr($query, strlen($fmt));
 }
 
-function get_artist_plays($artist, $lfm_key)
+function get_artist_plays($artist)
 {
+	global $last_fm_key;
+	
 	if (empty($artist))
 		return -1;
 		
 	try
 	{
-		$xml = new SimpleXMLElement("http://ws.audioscrobbler.com/2.0/?method=artist.getinfo&artist=".urlencode($artist)."&api_key=$lfm_key", NULL, true);
+		$xml = new SimpleXMLElement("http://ws.audioscrobbler.com/2.0/?method=artist.getinfo&artist=".urlencode($artist)."&api_key=$last_fm_key", NULL, true);
 		
 		return (int)($xml->artist->stats->playcount[0]);
 	}
@@ -175,17 +254,19 @@ function get_split_index($tweet)
 	else if (stripos($tweet, "'s") !== false) return "'s";
 	else if (stripos($tweet, "&quot;") !== false) return "&quot;";
 	else if (stripos($tweet, "~") !== false) return "~";
-	else if (stripos($tweet, "/") !== false) return "/";
 	else return "";
 }
 
-function extract_music_data($conn, $tweet, $lfm_key, $artist_not = "", $tokenize = true, $min_plays = 10000)
+function extract_music_data($tweet, $artist_not = "", $tokenize = true, $min_plays = 10000)
 {
+	global $conn, $last_fm_key;
+	
 	$original_tweet = $tweet;
 	$tweet = str_ireplace("#nowplaying", "", $tweet);
 	$tweet = str_ireplace("#np", "", $tweet);
 	$split_index = get_split_index($tweet);
 	$tweet = str_ireplace($split_index, " $split_index ", $tweet);
+	$tweet = str_ireplace(".", "", $tweet);
 	$music_data = array();
 	$skip_track = false;
 	
@@ -220,13 +301,13 @@ function extract_music_data($conn, $tweet, $lfm_key, $artist_not = "", $tokenize
 			
 			if (substr($word, 0, 1) == "@")
 			{
-				$user = lookup_user_by_name($conn, $word);
+				$user = lookup_user_by_name($word);
 				$word = $user['name'];
 			}
 			
 			$str = "$word $str";
 			$str = trim($str);
-			$play_count = get_artist_plays($str, $lfm_key);
+			$play_count = get_artist_plays($str);
 			
 			if ($play_count >= $min_plays)
 			{
@@ -246,13 +327,13 @@ function extract_music_data($conn, $tweet, $lfm_key, $artist_not = "", $tokenize
 			
 			if (substr($word, 0, 1) == "@")
 			{
-				$user = lookup_user_by_name($conn, $word);
+				$user = lookup_user_by_name($word);
 				$word = $user['name'];
 			}
 			
 			$str .= " ".$word;
 			$str = trim($str);
-			$play_count = get_artist_plays($str, $lfm_key);
+			$play_count = get_artist_plays($str);
 			
 			if ($play_count >= $min_plays)
 			{
@@ -269,17 +350,17 @@ function extract_music_data($conn, $tweet, $lfm_key, $artist_not = "", $tokenize
 	{
 		if (substr($str_before, 0, 1) == "@")
 		{
-			$user = lookup_user_by_name($conn, $str_before);
+			$user = lookup_user_by_name($str_before);
 			$str_before = $user['name'];
 		}
 		
 		if (substr($str_after, 0, 1) == "@")
 		{
-			$user = lookup_user_by_name($conn, $str_after);
+			$user = lookup_user_by_name($str_after);
 			$str_after = $user['name'];
 		}
 		
-		$play_count = get_artist_plays($str_before, $lfm_key);
+		$play_count = get_artist_plays($str_before);
 		
 		if ($play_count >= $min_plays)
 		{
@@ -290,7 +371,7 @@ function extract_music_data($conn, $tweet, $lfm_key, $artist_not = "", $tokenize
 		else if (!empty($str_before))
 			write_to_log("$str_before is not a valid artist.");
 		
-		$play_count = get_artist_plays($str_after, $lfm_key);
+		$play_count = get_artist_plays($str_after);
 		
 		if ($play_count >= $min_plays)
 		{
@@ -353,14 +434,15 @@ function extract_music_data($conn, $tweet, $lfm_key, $artist_not = "", $tokenize
 				$track_match = "";
 				$artist_match = "";
 				$term = str_replace("&quot;", "", $term);
+				$term = str_ireplace(" $split_index ", $split_index, $term);
 				
 				try
 				{
-					$xml = new SimpleXMLElement("http://ws.audioscrobbler.com/2.0/?method=track.search&track=".urlencode($term)."&artist=".urlencode($music_data['artist'])."&api_key=$lfm_key", NULL, true);
+					$xml = new SimpleXMLElement("http://ws.audioscrobbler.com/2.0/?method=track.search&track=".urlencode($term)."&artist=".urlencode($music_data['artist'])."&api_key=$last_fm_key", NULL, true);
 					$track_match = (string)($xml->results->trackmatches->track->name[0]);
 					$artist_match = (string)($xml->results->trackmatches->track->artist[0]);
 					
-					if (strcasecmp($artist_match, $music_data['artist']) == 0)
+					if ((strcasecmp($artist_match, $music_data['artist']) == 0) || (strcasecmp("the $artist_match", $music_data['artist']) == 0) || (strcasecmp($artist_match, "the ".$music_data['artist']) == 0))
 					{
 						$music_data['track'] = $track_match;
 						$music_data['artist'] = $artist_match;
@@ -377,7 +459,7 @@ function extract_music_data($conn, $tweet, $lfm_key, $artist_not = "", $tokenize
 		if (empty($music_data['track']) && ($most_plays >= $min_plays) && empty($artist_not))
 		{
 			write_to_log("Couldn't find a matching track for the artist ".$music_data['artist'].". Searching again for a different artist.");
-			return extract_music_data($conn, $tweet, $lfm_key, $music_data['artist']); //extracted wrong artist, try again with a different one
+			return extract_music_data($tweet, $music_data['artist']); //extracted wrong artist, try again with a different one
 		}
 			
 		else if ($most_plays < $min_plays) return array(); //this probably isn't a valid artist, so skip and return an empty array
@@ -386,7 +468,7 @@ function extract_music_data($conn, $tweet, $lfm_key, $artist_not = "", $tokenize
 			write_to_log("Parsed the tweet $original_tweet and found track ".$music_data['track']." by artist ".$music_data['artist'].".");
 	}
 	
-	else if (get_artist_plays($str_after, $lfm_key) > $min_plays)
+	else if (get_artist_plays($str_after) > $min_plays)
 	{
 			$music_data['artist'] = $str_after;
 			write_to_log("Parsed the tweet $original_tweet and found artist ".$music_data['artist'].".");	
@@ -441,32 +523,40 @@ function strip_feat($str)
 	return $str;
 }
 
-function list_direct_messages($conn)
+function list_direct_messages()
 {
+	global $conn;
+	
 	write_to_log("Retrieving direct messages...");
 	return json_decode(json_encode($conn->get('direct_messages')), true);
 }
 
-function delete_message($conn, $id)
+function delete_message($id)
 {
+	global $conn;
+	
 	write_to_log("Deleting direct message #$id.");
 	return json_decode(json_encode($conn->post('direct_messages/destroy', array("id" => $id)), true));
 }
 
-function list_followers($conn)
+function list_followers()
 {
+	global $conn;
+	
 	write_to_log("Checking followers...");
 	return json_decode(json_encode($conn->get('followers/ids')), true);
 }
 
-function update_follows($conn)
+function update_follows()
 {
+	global $conn;
+	
 	$new_follow_count = 0;
 	$followers = list_followers($conn);
 	
 	foreach ($followers as $follower_id)
 	{
-		$user = lookup_user_by_id($conn, $follower_id);
+		$user = lookup_user_by_id($follower_id);
 		
 		if ($user['following'] == false)
 		{
@@ -475,7 +565,7 @@ function update_follows($conn)
 			write_to_log("Sent follow request to @".$user['screen_name'].".");
 			$new_follow_count++;
 			
-			$user_updated = lookup_user_by_id($conn, $follower_id);
+			$user_updated = lookup_user_by_id($follower_id);
 		
 			if ($user_updated['following'] == true)
 				write_to_log("@tweetmetunes is now following user @".$user_updated['screen_name'].".");
@@ -487,14 +577,18 @@ function update_follows($conn)
 	return $followers;
 }
 
-function lookup_user_by_id($conn, $uid)
+function lookup_user_by_id($uid)
 {
+	global $conn;
+	
 	$lookup = json_decode(json_encode($conn->get('users/lookup', array("user_id" => "$uid"))), true);
 	return $lookup[0];
 }
 
-function lookup_user_by_name($conn, $screen_name)
+function lookup_user_by_name($screen_name)
 {
+	global $conn;
+	
 	$screen_name = str_replace("@", "", $screen_name);
 	$screen_name = str_replace(htmlspecialchars("@"), "", $screen_name);
 	$screen_name = str_replace(urlencode("@"), "", $screen_name);
@@ -502,32 +596,32 @@ function lookup_user_by_name($conn, $screen_name)
 	return $lookup[0];
 }
 
-function rate($conn, $db, $dm)
+function rate($text, $u, $uid)
 {
-	$uid = mysql_escape_string($dm['sender_id'], $db);
-	$u = $dm['sender_screen_name'];
+	global $conn, $db;
 	
 	$fmt = " like ";
-	$artist = mysql_escape_string(trim(substr($dm['text'], stripos($dm['text'], $fmt) + strlen($fmt))), $db);
+	$artist = trim(substr($text, stripos($text, $fmt) + strlen($fmt)));
 	
-	if (stripos($dm['text'], "more like ") !== false)
+	if (stripos($text, "more like ") !== false)
 	{
 		$rating = 1;
 		$rating_desc = "more";
 	}
 	
-	else if (stripos($dm['text'], "less like ") !== false)
+	else if (stripos($text, "less like ") !== false)
 	{
 		$rating = -1;
 		$rating_desc = "less";
 	}
 	
-	if (empty($rating)) return false;
+	if (empty($rating))
+		return false;
 	
 	if (!empty($u))
 	{
 		mysqli_query($db, "INSERT INTO rating (uid, artist, rating) VALUES ('$uid', '$artist', '$rating')");
-		tweet($conn, "@$u Got it. From now on I'll tweet you tunes $rating_desc like $artist.");
+		tweet("@$u Got it. From now on I'll tweet you tunes $rating_desc like $artist.");
 		write_to_log("Recording explicit rating from user @$u for artist $artist.");
 		return true;
 	}
@@ -536,8 +630,10 @@ function rate($conn, $db, $dm)
 		return false;
 }
 
-function get_user_settings($db, $uid)
+function get_user_settings($uid)
 {
+	global $db;
+	
 	$likes = array();
 	$dislikes = array();
 	
@@ -560,52 +656,79 @@ function get_user_settings($db, $uid)
 	return array("likes" => $likes, "dislikes" => $dislikes);
 }
 
-function get_tags_for_artist($artist, $lfm_key)
+function get_tags_for_artist($artist)
 {
+	global $last_fm_key;
+	
 	$count = 0;
 	$tags = array();
+	$tag_str = "Tags for artist $artist: ";
 	
 	try
 	{
-		$xml = new SimpleXMLElement("http://ws.audioscrobbler.com/2.0/?method=artist.getTopTags&artist=".urlencode($artist)."&api_key=$lfm_key", NULL, true);
+		$xml = new SimpleXMLElement("http://ws.audioscrobbler.com/2.0/?method=artist.getTopTags&artist=".urlencode($artist)."&autocorrect=1&api_key=$last_fm_key", NULL, true);
 		
-		for ($i = 0; $i <= 10; $i++)
-		{
-			if (count($tags) >= 10)
-				break;
-		
-			$count = (int)($xml->toptags->tag[$i]->count);
+		for ($i = 0; $i < 50; $i++)
+		{		
+			$count = (int)($xml->toptags->tag[$i]->count);			
 			$tag_name = (string)($xml->toptags->tag[$i]->name);
+			
+			if ($count == 0)
+				break;
 				
 			if ((!empty($tag_name)) && (strcasecmp($tag_name, $artist) != 0))
+			{
 				$tags[$tag_name] = $count;
+				if ($i > 0) $tag_str .= ", ";
+				$tag_str .= "$tag_name ($count)";
+			}
 		}
 	}
 	
 	catch (Exception $e) {}
 	
+	write_to_log("$tag_str.");
 	return $tags;
 }
 
+function reset_prefs($tweet, $u, $uid)
+{
+	global $db;
+	
+	$reset_all = (stripos($tweet, "reset all") !== false);
+	
+	if ((stripos($tweet, " ratings") !== false) || $reset_all)
+	{
+		mysqli_query($db, "DELETE FROM rating WHERE uid = '$uid'");
+		write_to_log("Reset ratings for user $u.");
+	}
+	
+	return tweet("@$u Your preferences were reset at ".date("g:i A")." on ".date("M j, Y").".");
+}
 
-update_follows($connection);
-$direct_messages = list_direct_messages($connection);
+update_follows();
+$direct_messages = list_direct_messages();
 $dm_count = 0;
 
 foreach ($direct_messages as $dm)
 {
+	$text = mysql_escape_string($dm['text']);
 	$user = mysql_escape_string($dm['sender_screen_name']);
+	$uid = mysql_escape_string($dm['sender_id']);
 	$dm_id = mysql_escape_string($dm['id']);
-	$settings = get_user_settings($db, mysql_escape_string($dm['sender_id']));
+	$settings = get_user_settings($uid);
 	write_to_log("Found new direct message from user @$user: ".$dm['text']);
 	
-	if (is_valid($dm['text']))
-		recommend($connection, $user, $dm['text'], $last_fm_key, $settings);
-	
-	else if (is_rating($dm['text']))
-		rate($connection, $db, $dm);
+	if (is_rating($text))
+		rate($text, $user, $uid);
 		
-	delete_message($connection, $dm_id);
+	else if (is_valid($text))
+		recommend($user, $text, $settings);
+		
+	else if (is_reset($text))
+		reset_prefs($text, $user, $uid);
+		
+	delete_message($dm_id);
 	$dm_count++;
 }
 
