@@ -186,7 +186,6 @@ function write_to_log($str)
 function is_valid($query)
 {
 	$query = trim($query);
-	write_to_log("Evaluating query $query.");
 	$fmt = "like ";
 	
 	if ((stripos(trim($query), $fmt) === 0) && (strlen(trim($query)) > strlen($fmt)))
@@ -267,6 +266,8 @@ function extract_music_data($tweet, $artist_not = "", $tokenize = true, $min_pla
 	$split_index = get_split_index($tweet);
 	$tweet = str_ireplace($split_index, " $split_index ", $tweet);
 	$tweet = str_ireplace(".", "", $tweet);
+	$tweet = str_ireplace("!", "", $tweet);
+	$tweet = str_ireplace("?", "", $tweet);
 	$music_data = array();
 	$skip_track = false;
 	
@@ -292,18 +293,27 @@ function extract_music_data($tweet, $artist_not = "", $tokenize = true, $min_pla
 	$terms_before = array();
 	$terms_after = array();
 	$str = "";
+	$word_count = 0;
 	
 	if ($tokenize)
 	{
+		$letters_and_numbers = range('a', 'z');
+		$letters_and_numbers = array_merge($letters_and_numbers, range('a', 'z'));
+		$letters_and_numbers = array_merge($letters_and_numbers, range('0', '9'));
+	
 		foreach ($words_before as $word)
 		{
 			$word = trim($word);
+			$first_char = substr($word, 0, 1);
 			
-			if (substr($word, 0, 1) == "@")
+			if ($first_char == "@")
 			{
 				$user = lookup_user_by_name($word);
 				$word = $user['name'];
 			}
+			
+			else if (!in_array($first_char, $letters_and_numbers) || (stripos("http:", $word) !== false) || $word_count >= 10)
+				break;
 			
 			$str = "$word $str";
 			$str = trim($str);
@@ -317,19 +327,26 @@ function extract_music_data($tweet, $artist_not = "", $tokenize = true, $min_pla
 				
 			else if (!empty($str))
 				write_to_log("$str is not a valid artist.");
+				
+			$word_count++;
 		}
 		
 		$str = "";
+		$word_count = 0;
 		
 		foreach ($words_after as $word)
 		{
 			$word = trim($word);
+			$first_char = substr($word, 0, 1);
 			
-			if (substr($word, 0, 1) == "@")
+			if ($first_char == "@")
 			{
 				$user = lookup_user_by_name($word);
 				$word = $user['name'];
 			}
+			
+			else if (!in_array($first_char, $letters_and_numbers) || (stripos("http:", $word) !== false) || $word_count >= 10)
+				break;
 			
 			$str .= " ".$word;
 			$str = trim($str);
@@ -343,6 +360,8 @@ function extract_music_data($tweet, $artist_not = "", $tokenize = true, $min_pla
 				
 			else if (!empty($str))
 				write_to_log("$str is not a valid artist.");
+				
+			$word_count++;
 		}
 	}
 	
@@ -382,7 +401,7 @@ function extract_music_data($tweet, $artist_not = "", $tokenize = true, $min_pla
 		else if (!empty($str_after))
 			write_to_log("$str_after is not a valid artist.");
 	}
-		
+	
 	if (!$skip_track)
 	{
 		$most_plays = 0;
@@ -464,7 +483,7 @@ function extract_music_data($tweet, $artist_not = "", $tokenize = true, $min_pla
 			
 		else if ($most_plays < $min_plays) return array(); //this probably isn't a valid artist, so skip and return an empty array
 	
-		else
+		else if (!empty($music_data['track']))
 			write_to_log("Parsed the tweet $original_tweet and found track ".$music_data['track']." by artist ".$music_data['artist'].".");
 	}
 	
@@ -660,6 +679,8 @@ function get_tags_for_artist($artist)
 {
 	global $last_fm_key;
 	
+	if (empty($artist)) return array();
+	
 	$count = 0;
 	$tags = array();
 	$tag_str = "Tags for artist $artist: ";
@@ -717,7 +738,7 @@ foreach ($direct_messages as $dm)
 	$uid = mysql_escape_string($dm['sender_id']);
 	$dm_id = mysql_escape_string($dm['id']);
 	$settings = get_user_settings($uid);
-	write_to_log("Found new direct message from user @$user: ".$dm['text']);
+	write_to_log("Found new direct message from user @$user: $text");
 	
 	if (is_rating($text))
 		rate($text, $user, $uid);
