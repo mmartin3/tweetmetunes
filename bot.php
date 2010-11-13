@@ -260,6 +260,7 @@ function extract_music_data($tweet, $artist_not = "", $tokenize = true, $min_pla
 	$original_tweet = $tweet;
 	$tweet = str_ireplace("#nowplaying", "", $tweet);
 	$tweet = str_ireplace("#np", "", $tweet);
+	$tweet = str_ireplace("#", "", $tweet);
 	$split_index = get_split_index($tweet);
 	$tweet = str_ireplace($split_index, " $split_index ", $tweet);
 	$tweet = str_ireplace(".", "", $tweet);
@@ -309,7 +310,7 @@ function extract_music_data($tweet, $artist_not = "", $tokenize = true, $min_pla
 				$word = $user['name'];
 			}
 			
-			else if ((!in_array($first_char, $letters_and_numbers) && (strlen($word) == 1)) || (stripos("http:", $word) !== false) || $word_count >= 10)
+			else if ((!in_array($first_char, $letters_and_numbers) && (strlen($word) == 1)) || (stripos($word, "http:") !== false) || $word_count >= 10)
 				break;
 			
 			$str = "$word $str";
@@ -342,7 +343,7 @@ function extract_music_data($tweet, $artist_not = "", $tokenize = true, $min_pla
 				$word = $user['name'];
 			}
 			
-			else if ((!in_array($first_char, $letters_and_numbers) && (strlen($word) == 1)) || (stripos("http:", $word) !== false) || $word_count >= 10)
+			else if ((!in_array($first_char, $letters_and_numbers) && (strlen($word) == 1)) || (stripos($word, "http:") !== false) || $word_count >= 10)
 				break;
 			
 			$str .= " ".$word;
@@ -461,6 +462,7 @@ function extract_music_data($tweet, $artist_not = "", $tokenize = true, $min_pla
 			{
 				$track_match = "";
 				$artist_match = "";
+				$term = simplify_title($term); //strips things like "bonus track" and "main version" from the string
 				$term = str_replace("&quot;", "", $term);
 				$term = str_ireplace(" $split_index ", $split_index, $term);
 				write_to_log("Searching Last.fm for track matching $term by artist ".$music_data['artist']."...");
@@ -470,7 +472,11 @@ function extract_music_data($tweet, $artist_not = "", $tokenize = true, $min_pla
 					$xml = new SimpleXMLElement("http://ws.audioscrobbler.com/2.0/?method=track.search&track=".urlencode($term)."&artist=".urlencode($music_data['artist'])."&limit=1&api_key=$last_fm_key", NULL, true);
 					$track_match = (string)($xml->results->trackmatches->track->name[0]);
 					$artist_match = (string)($xml->results->trackmatches->track->artist[0]);
+					$track_match = simplify_title($track_match);
 					
+					if ((stripos($track_match, "www.") !== false) || (stripos($track_match, "http:") !== false))
+						$track_match = ""; //prevents the bot from recommending spammed ID3 tags
+						
 					$same_artist = (strcasecmp($artist_match, $music_data['artist']) == 0) || (strcasecmp("the $artist_match", $music_data['artist']) == 0) || (strcasecmp($artist_match, "the ".$music_data['artist']) == 0);
 					
 					if ($same_artist)
@@ -555,6 +561,32 @@ function strip_feat($str)
 		return trim(substr($str, 0, stripos($str, "featuring")));
 		
 	return $str;
+}
+
+function simplify_title($str)
+{
+	if ((strrpos($str, "(") !== false) && (stripos($str, "track)") !== false))
+		return trim(substr($str, 0, strrpos($str, "(")));
+		
+	if ((strrpos($str, "[") !== false) && (stripos($str, "track]") !== false))
+		return trim(substr($str, 0, strrpos($str, "[")));
+		
+	if ((strrpos($str, "(") !== false) && (stripos($str, "main version)") !== false))
+		return trim(substr($str, 0, strrpos($str, "(")));
+		
+	if ((strrpos($str, "[") !== false) && (stripos($str, "main version]") !== false))
+		return trim(substr($str, 0, strrpos($str, "[")));
+		
+	if ((strrpos($str, "(") !== false) && (stripos($str, ".com)") !== false))
+		return trim(substr($str, 0, strrpos($str, "(")));
+		
+	if ((strrpos($str, "(www") !== false) || (strrpos($str, "(http") !== false))
+		return trim(substr($str, 0, strrpos($str, "(")));
+		
+	if ((strrpos($str, "- www") !== false) || (strrpos($str, "- http") !== false))
+		return trim(substr($str, 0, strrpos($str, "-")));
+	
+	return $str;		
 }
 
 function list_direct_messages()
