@@ -56,21 +56,14 @@ function recommend($u, $text, $settings)
 	$query_music = split_query($text);
 	$original_query = $query_music;
 	$query_music = str_replace("\"", "", $query_music);
-	$query_split_index = get_split_index($query_music);
 	$matches = array();
 	$match_count = 1;
 	
 	write_to_log("Getting Last.fm data for $original_query...");
 	$query_data = extract_music_data(stripslashes($query_music), "", false, 100);
 	
-	if (!empty($query_data['artist']))
-		$query_tags = get_tags_for_artist($query_data['artist']);
-		
-	else if (empty($query_split_index))
-		return tweet("@$u Sorry, $query_music doesn't seem to be a valid artist. Please try a different query.");
-		
-	else
-		return tweet("@$u Sorry, $query_music doesn't seem to contain a valid artist and/or track. Please try a different query.");
+	if (empty($query_data['artist']))
+		return tweet("@$u Sorry, $query_music doesn't seem to contain a valid artist. Please try a different query.");
 		
 	$now_playing = search("%23nowplaying+OR+%23np+".$query_data['artist']."+".$query_data['track']);
 	
@@ -470,6 +463,7 @@ function extract_music_data($tweet, $artist_not = "", $tokenize = true, $min_pla
 				$artist_match = "";
 				$term = str_replace("&quot;", "", $term);
 				$term = str_ireplace(" $split_index ", $split_index, $term);
+				write_to_log("Searching Last.fm for track matching $term by artist ".$music_data['artist']."...");
 				
 				try
 				{
@@ -477,7 +471,9 @@ function extract_music_data($tweet, $artist_not = "", $tokenize = true, $min_pla
 					$track_match = (string)($xml->results->trackmatches->track->name[0]);
 					$artist_match = (string)($xml->results->trackmatches->track->artist[0]);
 					
-					if ((strcasecmp($artist_match, $music_data['artist']) == 0) || (strcasecmp("the $artist_match", $music_data['artist']) == 0) || (strcasecmp($artist_match, "the ".$music_data['artist']) == 0))
+					$same_artist = (strcasecmp($artist_match, $music_data['artist']) == 0) || (strcasecmp("the $artist_match", $music_data['artist']) == 0) || (strcasecmp($artist_match, "the ".$music_data['artist']) == 0);
+					
+					if ($same_artist)
 					{
 						$music_data['track'] = $track_match;
 						$music_data['artist'] = $artist_match;
@@ -486,8 +482,11 @@ function extract_music_data($tweet, $artist_not = "", $tokenize = true, $min_pla
 				
 				catch (Exception $e) {}
 				
-				if ($track_match == "") write_to_log("$term is not a valid track by ".$music_data['artist'].".");
-				else write_to_log("$track_match is a valid track by $artist_match.");
+				if (!empty($track_match) && $same_artist)
+					write_to_log("$track_match is a track by $artist_match.");
+				
+				else
+					write_to_log("$term does not match any tracks by ".$music_data['artist'].".");
 			}
 		}
 		
