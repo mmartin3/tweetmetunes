@@ -4,7 +4,14 @@
 <head>
 <title>Tweet Me Tunes</title>
 <link rel="stylesheet" href="style.css" type="text/css" />
+<script src="http://platform.twitter.com/anywhere.js?id=qOyJAYFUOND8iPp8WMbDA&v=1" type="text/javascript"></script>
 <script type="text/javascript">
+twttr.anywhere(function(twitter)
+{
+	twitter("#follow").followButton("tweetmetunes");
+	twitter.hovercards();
+});
+
 function tweetMeTunes()
 {
 	parent.location = "http://twitter.com/?status=d tweetmetunes" + document.getElementById('like').value + document.getElementById('q').value;
@@ -43,8 +50,8 @@ music recommendation bot under development for
 <p>These are <b>not</b> valid queries:</p>
 <p class="ex"><code>d tweetmetunes like Lady Gaga Bad Romance</code></p>
 <p class="ex"><code>d tweetmetunes like Bad Romance</code></p>
-<p><a href="http://twitter.com/tweetmetunes" target="_blank">@tweetmetunes</a> must be following you on Twitter to send a DM query. 
-Just start following the bot and it will follow you back automatically.</p>
+<p>You must follow @tweetmetunes before sending a DM query. 
+It should follow you back automatically.</p>
 <p>Enter the name of an artist (and optionally a track) in the search box to the right and click "Tweet me tunes!" 
 to have your query tweet formatted for you.</p>
 </div>
@@ -67,11 +74,22 @@ to have your query tweet formatted for you.</p>
 <input type="button" value=" Tweet me tunes! " onClick="tweetMeTunes();" />&nbsp;
 <input type="button" value=" Search #nowplaying " onClick="searchNowPlaying();" />
 </p>
-<p><a href="http://twitter.com/login">Sign in</a> to Twitter first.</p>
+<div id="follow"></div>
+<fieldset id="preferences">
+<legend id="prefsLegend"><b>User Settings</b></legend>
+<form id="prefsForm" action="http://twitter.com/" method="get">
+<select name="status" class="reset-select">
+<option value="d tweetmetunes reset all">all</option>
+<option value="d tweetmetunes reset ratings">ratings</option>
+</select>
+&nbsp;
+<input id="resetButton" type="submit" value=" Reset " />
+</form>
+</fieldset>
 <div id="footer">
 <p><b>Maintained by:</b> 
-<a href="http://twitter.com/electrovert" target="_blank">Matt Martin</a> and <a href="http://twitter.com/ZakTaccardi" target="_blank">Zak Taccardi</a></p>
-<p><b>Last updated:</b> November 7, 2010</p>
+Matt Martin (@electrovert) and Zak Taccardi (@ZakTaccardi)</p>
+<p><b>Last updated:</b> November 12, 2010</p>
 </div>
 </center>
 </td>

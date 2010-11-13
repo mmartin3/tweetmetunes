@@ -19,6 +19,22 @@ td
 	vertical-align: top;
 }
 
+fieldset
+{
+	color: white;
+}
+
+legend
+{
+	font-size: 1.1em;
+}
+
+.twitter-button
+{
+	margin-top: 5px;
+	margin-bottom: 5px;
+}
+
 p.ex
 {
 	padding-left: 8px;
@@ -28,19 +44,30 @@ p.ex
 
 .logo
 {
-	padding-top: 25px;
+	padding-top: 5px;
 }
 
 .searchbox
 {
 	width: 400px;
 	margin-right: 5px;
-	margin-top: 50px;
+	margin-top: 25px;
+}
+
+.reset-select
+{
+	width: 150px;
+	margin-bottom: 5px;
+}
+
+#preferences
+{
+	margin-top: 25px;
 }
 
 #footer
 {
-	margin-top: 75px;
+	margin-top: 50px;
 }
 
 #qtype
@@ -51,7 +78,7 @@ p.ex
 #left-widget
 {
 	width: 275px;
-	height: 440px;
+	height: 430px;
 	margin-left: 75px;
 	margin-right: 40px;
 	font-size: 0.75em;

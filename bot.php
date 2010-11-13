@@ -57,7 +57,6 @@ function recommend($u, $text, $settings)
 	$original_query = $query_music;
 	$query_music = str_replace("\"", "", $query_music);
 	$query_split_index = get_split_index($query_music);
-	$now_playing = search("%23nowplaying+OR+%23np+".stripslashes($query_music));
 	$matches = array();
 	$match_count = 1;
 	
@@ -72,13 +71,15 @@ function recommend($u, $text, $settings)
 		
 	else
 		return tweet("@$u Sorry, $query_music doesn't seem to contain a valid artist and/or track. Please try a different query.");
+		
+	$now_playing = search("%23nowplaying+OR+%23np+".$query_data['artist']."+".$query_data['track']);
 	
 	foreach ($now_playing as $result)
 	{
 		if ($match_count > 5)
 				break;
 				
-		$also_playing = search("%23nowplaying+OR+%23np&nots=$query_music&from=".$result['from_user']);
+		$also_playing = search("%23nowplaying+OR+%23np&nots=".$query_data['artist']."&from=".$result['from_user']);
 		
 		foreach ($also_playing as $result2)
 		{
@@ -158,12 +159,15 @@ function recommend($u, $text, $settings)
 		
 		foreach ($nearest_neighbors as $key => $value)
 		{
-			$music_data = $matches[$key];
-			write_to_log("Recommending ".$music_data['artist']." - ".$music_data['track']." to @$u.");
+			if ($value < 1)
+			{
+				$music_data = $matches[$key];
+				write_to_log("Recommending ".$music_data['artist']." - ".$music_data['track']." to @$u.");
+					
+				$tweet_info = tweet("@$u You might like ".$music_data['artist']." - ".$music_data['track'].". ".get_youtube_link($music_data));
 				
-			$tweet_info = tweet("@$u You might like ".$music_data['artist']." - ".$music_data['track'].". ".get_youtube_link($music_data));
-			
-			if (empty($tweet_info['error'])) return true;
+				if (empty($tweet_info['error'])) return true;
+			}
 		}
 	}
 	
@@ -312,7 +316,7 @@ function extract_music_data($tweet, $artist_not = "", $tokenize = true, $min_pla
 				$word = $user['name'];
 			}
 			
-			else if (!in_array($first_char, $letters_and_numbers) || (stripos("http:", $word) !== false) || $word_count >= 10)
+			else if ((!in_array($first_char, $letters_and_numbers) && (strlen($word) == 1)) || (stripos("http:", $word) !== false) || $word_count >= 10)
 				break;
 			
 			$str = "$word $str";
@@ -345,7 +349,7 @@ function extract_music_data($tweet, $artist_not = "", $tokenize = true, $min_pla
 				$word = $user['name'];
 			}
 			
-			else if (!in_array($first_char, $letters_and_numbers) || (stripos("http:", $word) !== false) || $word_count >= 10)
+			else if ((!in_array($first_char, $letters_and_numbers) && (strlen($word) == 1)) || (stripos("http:", $word) !== false) || $word_count >= 10)
 				break;
 			
 			$str .= " ".$word;
@@ -427,6 +431,18 @@ function extract_music_data($tweet, $artist_not = "", $tokenize = true, $min_pla
 			}
 		}
 		
+		if (!$tokenize && !$skip_track)
+		{
+			if ($artist_loc == "before")
+				$music_data['track'] = $str_after;
+			
+			if ($artist_loc == "after")
+				$music_data['track'] = $str_before;
+			
+			write_to_log("Found track ".$music_data['track']." by artist ".$music_data['artist'].".");
+			return $music_data;
+		}
+		
 		if ($artist_loc == "before") $track_words = $words_after;
 		else $track_words = $words_before;
 		$track_terms = array();
@@ -457,7 +473,7 @@ function extract_music_data($tweet, $artist_not = "", $tokenize = true, $min_pla
 				
 				try
 				{
-					$xml = new SimpleXMLElement("http://ws.audioscrobbler.com/2.0/?method=track.search&track=".urlencode($term)."&artist=".urlencode($music_data['artist'])."&api_key=$last_fm_key", NULL, true);
+					$xml = new SimpleXMLElement("http://ws.audioscrobbler.com/2.0/?method=track.search&track=".urlencode($term)."&artist=".urlencode($music_data['artist'])."&limit=1&api_key=$last_fm_key", NULL, true);
 					$track_match = (string)($xml->results->trackmatches->track->name[0]);
 					$artist_match = (string)($xml->results->trackmatches->track->artist[0]);
 					
@@ -547,7 +563,7 @@ function list_direct_messages()
 	global $conn;
 	
 	write_to_log("Retrieving direct messages...");
-	return json_decode(json_encode($conn->get('direct_messages')), true);
+	return array_reverse(json_decode(json_encode($conn->get('direct_messages')), true));
 }
 
 function delete_message($id)
