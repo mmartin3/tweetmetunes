@@ -137,7 +137,7 @@ function recommend($u, $text, $settings)
 			}
 			
 			if (($like_count + $dislike_count) > 0)
-				$pearson /= ($like_count + $dislike_count);
+				$pearson /= (($like_count + $dislike_count) + 1);
 			
 			if (($pearson != $pearson_base) && !empty($pearson))
 				write_to_log("#$match_num: Adjusted pearson for ".$match['artist']." with respect to ".$query_data['artist']." and explicit ratings: $pearson");
