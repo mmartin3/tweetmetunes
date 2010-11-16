@@ -1,4 +1,5 @@
 <?php
+$exec_time = microtime(true);
 $min_delay = 60;
 
 if ((!empty($_GET['delay'])) && ($_GET['delay'] < $min_delay))
@@ -24,6 +25,7 @@ include 'config.php';
 include 'db_connect.php';
 
 $conn = new TwitterOAuth($consumer_key, $consumer_secret, $oauth_token, $oauth_token_secret);
+write_to_log("Connected to Twitter via oAuth.");
 date_default_timezone_set("America/New York");
 set_time_limit($delay);
 error_reporting(0);
@@ -173,11 +175,28 @@ function recommend($u, $text, $settings)
 
 function write_to_log($str)
 {
-	$str = "[".date("Y-m-d H:s")."] $str";
+	global $exec_time;
+	static $start_time, $elapsed_time;
+	
+	if (empty($start_time))
+		$start_time = $exec_time;
+	
+	$timestamp = "[".date("Y-m-d H:s")."]";
+	$str = "$timestamp $str";
 	echo "<p>$str</p>\n";
 	$f = fopen("tmtlog.txt", 'a') or die("can't open file");
 	fwrite($f, "$str\r\n");
 	fclose($f);
+	
+	$end_time = microtime(true);
+	$op_time = $end_time - $start_time;
+	$elapsed_time += $op_time;
+	$start_time = $end_time;
+	echo "<span style='visibility: hidden;'>$timestamp</span> <i>";
+	if ($op_time > 1) echo "<span style='color: red;'>";
+	echo round($op_time, 4)." seconds (Elapsed execution time: ".round($elapsed_time, 4)." seconds)";
+	if ($op_time > 1) echo "</span>";
+	echo "</i>\n";
 }
 
 function is_valid($query)
@@ -610,11 +629,15 @@ function delete_message($id)
 	return json_decode(json_encode($conn->post('direct_messages/destroy', array("id" => $id)), true));
 }
 
-function list_followers()
+function list_followers($new_only = false)
 {
 	global $conn;
 	
 	write_to_log("Checking followers...");
+	
+	if ($new_only)
+		return json_decode(json_encode($conn->get('followers/ids', array("following" => false)), true));
+	
 	return json_decode(json_encode($conn->get('followers/ids')), true);
 }
 
@@ -623,23 +646,29 @@ function update_follows()
 	global $conn;
 	
 	$new_follow_count = 0;
-	$followers = list_followers($conn);
+	$followers = list_followers(true);
 	
 	foreach ($followers as $follower_id)
 	{
 		$user = lookup_user_by_id($follower_id);
 		
-		if (!empty($user['screen_name']) && ($user['following'] == false))
+		if (!empty($user['screen_name']))
 		{
-			write_to_log("User @".$user['screen_name']." is now following @tweetmetunes.");
-			json_decode(json_encode($conn->post('friendships/create', array("id" => $follower_id)), true));
-			write_to_log("Sent follow request to @".$user['screen_name'].".");
-			$new_follow_count++;
+			if ($user['following'] == false)
+			{
+				write_to_log("User @".$user['screen_name']." is now following @tweetmetunes.");
+				json_decode(json_encode($conn->post('friendships/create', array("id" => $follower_id)), true));
+				write_to_log("Sent follow request to @".$user['screen_name'].".");
+				$new_follow_count++;
+				
+				$user_updated = lookup_user_by_id($follower_id);
 			
-			$user_updated = lookup_user_by_id($follower_id);
-		
-			if ($user_updated['following'] == true)
-				write_to_log("@tweetmetunes is now following user @".$user_updated['screen_name'].".");
+				if ($user_updated['following'] == true)
+					write_to_log("@tweetmetunes is now following user @".$user_updated['screen_name'].".");
+			}
+			
+			else
+				break;
 		}
 	}
 	
@@ -811,11 +840,11 @@ write_to_log("Done.");
 
 echo "<center>\n";
 echo "<br />\n";
+echo "<p><b>Total execution time:</b> ".round(microtime(true) - $exec_time, 1)." seconds</p>\n";
 echo "<form action='bot.php' method='get'>\n";
 echo "<p><b>Set delay:</b>&nbsp;<input style='width: 40px;' name='delay' value='$delay' />&nbsp;seconds&nbsp;&nbsp;";
 echo "<input type='submit' value=' Submit ' /></p>\n";
 echo "</form>\n";
-echo "<br />\n";
 echo "<p>";
 echo "<a href='http://tinyurl.com/tweetmetunes' target='_blank'>Tweet Me Tunes portal</a> / ";
 echo "<a href='http://twitter.com/tweetmetunes' target='_blank'>@tweetmetunes on Twitter</a> / ";
