@@ -260,7 +260,6 @@ function extract_music_data($tweet, $artist_not = "", $tokenize = true, $min_pla
 	$original_tweet = $tweet;
 	$tweet = str_ireplace("#nowplaying", "", $tweet);
 	$tweet = str_ireplace("#np", "", $tweet);
-	$tweet = str_ireplace("#", "", $tweet);
 	$split_index = get_split_index($tweet);
 	$tweet = str_ireplace($split_index, " $split_index ", $tweet);
 	$tweet = str_ireplace(".", "", $tweet);
@@ -336,6 +335,9 @@ function extract_music_data($tweet, $artist_not = "", $tokenize = true, $min_pla
 		{
 			$word = trim($word);
 			$first_char = substr($word, 0, 1);
+			
+			if ($first_char == "#")
+				continue;
 			
 			if ($first_char == "@")
 			{
@@ -460,10 +462,13 @@ function extract_music_data($tweet, $artist_not = "", $tokenize = true, $min_pla
 		{
 			foreach ($track_terms as $term)
 			{
+				if (stripos($term, "#") !== false)
+					continue;
+				
 				$track_match = "";
 				$artist_match = "";
 				$term = simplify_title($term); //strips things like "bonus track" and "main version" from the string
-				$term = str_replace("&quot;", "", $term);
+				$term = str_ireplace("&quot;", "", $term);
 				$term = str_ireplace(" $split_index ", $split_index, $term);
 				write_to_log("Searching Last.fm for track matching $term by artist ".$music_data['artist']."...");
 				
@@ -511,7 +516,7 @@ function extract_music_data($tweet, $artist_not = "", $tokenize = true, $min_pla
 	else if (get_artist_plays($str_after) > $min_plays)
 	{
 			$music_data['artist'] = $str_after;
-			write_to_log("Parsed the tweet $original_tweet and found artist ".$music_data['artist'].".");	
+			write_to_log("Parsed $original_tweet and found artist ".$music_data['artist'].".");
 	}
 	
 	return $music_data; //found artist and/or track
@@ -624,7 +629,7 @@ function update_follows()
 	{
 		$user = lookup_user_by_id($follower_id);
 		
-		if ($user['following'] == false)
+		if (!empty($user['screen_name']) && ($user['following'] == false))
 		{
 			write_to_log("User @".$user['screen_name']." is now following @tweetmetunes.");
 			json_decode(json_encode($conn->post('friendships/create', array("id" => $follower_id)), true));
@@ -730,7 +735,7 @@ function get_tags_for_artist($artist)
 	
 	$count = 0;
 	$tags = array();
-	$tag_str = "Tags for artist $artist: ";
+	$tag_str = "Last.fm tags for artist $artist: ";
 	
 	try
 	{
@@ -755,7 +760,7 @@ function get_tags_for_artist($artist)
 	
 	catch (Exception $e) {}
 	
-	write_to_log("$tag_str.");
+	write_to_log("$tag_str");
 	return $tags;
 }
 
