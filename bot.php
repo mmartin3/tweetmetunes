@@ -37,6 +37,7 @@ function search($q)
 	$search = file_get_contents("http://search.twitter.com/search.json?lang=en&q=$q");
 	if ($search === false) die('Error occurred.');
 	$result = json_decode($search, true);
+	write_to_log("Returning ".count($result['results'])." results matching search query $q.");
 	return $result['results'];
 }
 
@@ -54,6 +55,13 @@ function tweet($status)
 function recommend($u, $text, $settings)
 {
 	global $conn, $last_fm_key;
+	
+	extract_link_type($text, $settings, "YouTube");
+	extract_link_type($text, $settings, "Last.fm");
+	extract_link_type($text, $settings, "Hype Machine");
+	extract_link_type($text, $settings, "Amazon");
+	extract_link_type($text, $settings, "iTunes");
+	extract_link_type($text, $settings, "SoundCloud");
 	
 	$query_music = split_query($text);
 	$original_query = $query_music;
@@ -158,8 +166,26 @@ function recommend($u, $text, $settings)
 			{
 				$music_data = $matches[$key];
 				write_to_log("Recommending ".$music_data['artist']." - ".$music_data['track']." to @$u.");
+				
+				if ($settings['link'] == "Last.fm")
+					$link = get_last_fm_link($music_data);
 					
-				$tweet_info = tweet("@$u You might like ".$music_data['artist']." - ".$music_data['track'].". ".get_youtube_link($music_data));
+				else if ($settings['link'] == "Hype Machine")
+					$link = get_hypem_link($music_data);
+				
+				else if ($settings['link'] == "Amazon")
+					$link = get_amazon_link($music_data);
+					
+				else if ($settings['link'] == "iTunes")
+					$link = get_itunes_link($music_data);
+					
+				else if ($settings['link'] == "Soundcloud")
+					$link = get_soundcloud_link($music_data);
+					
+				else
+					$link = get_youtube_link($music_data);
+					
+				$tweet_info = tweet("@$u You might like ".$music_data['artist']." - ".$music_data['track'].". $link");
 				
 				if (empty($tweet_info['error'])) return true;
 			}
@@ -806,6 +832,95 @@ function reset_prefs($tweet, $u, $uid)
 	}
 	
 	return tweet("@$u Your preferences were reset at ".date("g:i A")." on ".date("M j, Y").".");
+}
+
+function shorten_link($link)
+{
+	global $bit_ly_key, $bit_ly_login;
+	
+	if (empty($link))
+		return "";
+	
+	$result = json_decode(file_get_contents("http://api.bit.ly/v3/shorten?login=$bit_ly_login&apiKey=$bit_ly_key&longUrl=".urlencode($link)), true);
+	$short_link = $result['data']['url'];
+	write_to_log("Shortened URL $link to $short_link.");
+	return $short_link;
+}
+
+function get_last_fm_link($music_data)
+{
+	$artist = $music_data['artist'];
+	$track = $music_data['track'];
+
+	if (!empty($track))
+		return shorten_link("http://last.fm/music/$artist/_/$track");
+	
+	else if (!empty($artist))
+		return shorten_link("http://last.fm/music/$artist");
+		
+	return "";
+}
+
+function get_hypem_link($music_data)
+{
+	$artist = urlencode($music_data['artist']);
+	$track = urlencode($music_data['track']);
+
+	if (!empty($track))
+		return shorten_link("http://hypem.com/search/$artist+$track");
+	
+	else if (!empty($artist))
+		return shorten_link("http://hypem.com/search/$artist");
+		
+	return "";
+}
+
+function get_amazon_link($music_data)
+{
+	$artist = $music_data['artist'];
+	$track = $music_data['track'];
+	
+	if (!empty($track))
+		return shorten_link("http://www.amazon.com/s/ref=nb_sb_noss?url=search-alias%3Ddigital-music&field-keywords=".urlencode("$artist $track"));
+	
+	else if (!empty($artist))
+		return shorten_link("http://www.amazon.com/s/ref=nb_sb_noss?url=search-alias%3Ddigital-music&field-keywords=".urlencode($artist));
+		
+	return "";
+}
+
+function get_itunes_link($music_data)
+{
+	$term = urlencode($music_data['artist']." ".$music_data['track']);
+	$search = file_get_contents("http://ax.itunes.apple.com/WebObjects/MZStoreServices.woa/wa/wsSearch?term=$term&media=music&limit=1");
+	$result = json_decode($search, true);
+	$link = $result['results'][0]['trackViewUrl'];
+	
+	return shorten_link($link);
+}
+
+function get_soundcloud_link($music_data)
+{
+	$artist = $music_data['artist'];
+	$track = $music_data['track'];
+	
+	if (!empty($track))
+		return shorten_link("http://soundcloud.com/search?q[fulltext]=".urlencode("$artist $track"));
+	
+	else if (!empty($artist))
+		return shorten_link("http://soundcloud.com/search?q[fulltext]=".urlencode($artist));
+		
+	return "";
+}
+
+function extract_link_type(&$tweet, &$settings, $site)
+{
+	if (stripos($tweet, "on $site") !== false)
+	{
+		$tweet = str_ireplace("on $site", "", $tweet);
+		$settings['link'] = $site;
+		write_to_log("Set recommendation link type to $site.");
+	}
 }
 
 update_follows();
