@@ -17,6 +17,12 @@ if (empty($delay)) $delay = 600;
 <head>
 <title>Tweet Me Tunes bot</title>
 <meta http-equiv="refresh" content="<?php echo $delay ?>">
+<style type="text/css">
+body
+{
+	font-size: 0.9em;
+}
+</style>
 </head>
 <body>
 <?php
@@ -208,14 +214,14 @@ function write_to_log($str)
 		$start_time = $exec_time;
 	
 	$timestamp = "[".date("Y-m-d H:s")."]";
-	echo "<p style='font-size: 0.9em;'><b>$timestamp</b>&nbsp;&nbsp;$str</p>\n";
+	echo "<p>$timestamp $str</p>\n";
 	fwrite($log_file, "$timestamp $str\r\n");
 	
 	$end_time = microtime(true);
 	$op_time = $end_time - $start_time;
 	$elapsed_time += $op_time;
 	$start_time = $end_time;
-	echo "<p style='font-size: 0.9em;'><span style='visibility: hidden;'><b>$timestamp</b>&nbsp;&nbsp;</span> <i>";
+	echo "<p><span style='visibility: hidden;'>$timestamp </span> <i>";
 	if ($op_time > 1) echo "<span style='color: red;'>";
 	echo round($op_time, 4)." seconds (Elapsed time: ".round($elapsed_time, 4)." seconds)";
 	if ($op_time > 1) echo "</span>";
