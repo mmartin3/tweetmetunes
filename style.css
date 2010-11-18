@@ -22,11 +22,18 @@ td
 fieldset
 {
 	color: white;
+	font-size: 0.75em;
 }
 
 legend
 {
-	font-size: 1.1em;
+	font-size: 1.0em;
+}
+
+input[type="radio"]
+{
+	margin-left: 4px;
+	margin-right: 2px;
 }
 
 .twitter-button
@@ -42,11 +49,6 @@ p.ex
 	margin-bottom: 1px !important;
 }
 
-.logo
-{
-	padding-top: 5px;
-}
-
 .searchbox
 {
 	width: 400px;
@@ -60,14 +62,20 @@ p.ex
 	margin-bottom: 5px;
 }
 
+.link-selections
+{
+	font-size: 0.75em;
+	vertical-align: text-top;
+}
+
 #preferences
 {
-	margin-top: 25px;
+	margin-top: 20px;
 }
 
 #footer
 {
-	margin-top: 50px;
+	margin-top: 20px;
 }
 
 #qtype

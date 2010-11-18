@@ -25,10 +25,14 @@ include 'config.php';
 include 'db_connect.php';
 
 $conn = new TwitterOAuth($consumer_key, $consumer_secret, $oauth_token, $oauth_token_secret);
+$log_file = fopen("tmtlog.txt", 'a') or die("can't open file");
 write_to_log("Connected to Twitter via oAuth.");
 date_default_timezone_set("America/New York");
 set_time_limit($delay);
 error_reporting(0);
+
+$link_users = array("@YouTube", "@lastfm", "@hypem", "@amazon", "@iTunes", "@SoundCloud");
+$confirm_msgs = array("Alright.", "Got it.", "Understood.", "OK.", "Of course.");
 
 include 'distance.php';
 
@@ -37,7 +41,7 @@ function search($q)
 	$search = file_get_contents("http://search.twitter.com/search.json?lang=en&q=$q");
 	if ($search === false) die('Error occurred.');
 	$result = json_decode($search, true);
-	write_to_log("Returning ".count($result['results'])." results matching search query $q.");
+	write_to_log("Returning ".count($result['results'])." results matching search query: $q");
 	return $result['results'];
 }
 
@@ -54,14 +58,10 @@ function tweet($status)
 
 function recommend($u, $text, $settings)
 {
-	global $conn, $last_fm_key;
+	global $conn, $last_fm_key, $link_users;
 	
-	extract_link_type($text, $settings, "YouTube");
-	extract_link_type($text, $settings, "Last.fm");
-	extract_link_type($text, $settings, "Hype Machine");
-	extract_link_type($text, $settings, "Amazon");
-	extract_link_type($text, $settings, "iTunes");
-	extract_link_type($text, $settings, "SoundCloud");
+	foreach ($link_users as $link_type)
+		extract_link_type($text, $settings, $link_type);
 	
 	$query_music = split_query($text);
 	$original_query = $query_music;
@@ -167,19 +167,19 @@ function recommend($u, $text, $settings)
 				$music_data = $matches[$key];
 				write_to_log("Recommending ".$music_data['artist']." - ".$music_data['track']." to @$u.");
 				
-				if ($settings['link'] == "Last.fm")
+				if ($settings['link'] == "@lastfm")
 					$link = get_last_fm_link($music_data);
 					
-				else if ($settings['link'] == "Hype Machine")
+				else if ($settings['link'] == "@hypem")
 					$link = get_hypem_link($music_data);
 				
-				else if ($settings['link'] == "Amazon")
+				else if ($settings['link'] == "@amazon")
 					$link = get_amazon_link($music_data);
 					
-				else if ($settings['link'] == "iTunes")
+				else if ($settings['link'] == "@iTunes")
 					$link = get_itunes_link($music_data);
 					
-				else if ($settings['link'] == "Soundcloud")
+				else if ($settings['link'] == "@SoundCloud")
 					$link = get_soundcloud_link($music_data);
 					
 				else
@@ -201,28 +201,25 @@ function recommend($u, $text, $settings)
 
 function write_to_log($str)
 {
-	global $exec_time;
+	global $exec_time, $log_file;
 	static $start_time, $elapsed_time;
 	
 	if (empty($start_time))
 		$start_time = $exec_time;
 	
 	$timestamp = "[".date("Y-m-d H:s")."]";
-	$str = "$timestamp $str";
-	echo "<p>$str</p>\n";
-	$f = fopen("tmtlog.txt", 'a') or die("can't open file");
-	fwrite($f, "$str\r\n");
-	fclose($f);
+	echo "<p style='font-size: 0.9em;'><b>$timestamp</b>&nbsp;&nbsp;$str</p>\n";
+	fwrite($log_file, "$timestamp $str\r\n");
 	
 	$end_time = microtime(true);
 	$op_time = $end_time - $start_time;
 	$elapsed_time += $op_time;
 	$start_time = $end_time;
-	echo "<span style='visibility: hidden;'>$timestamp</span> <i>";
+	echo "<p style='font-size: 0.9em;'><span style='visibility: hidden;'><b>$timestamp</b>&nbsp;&nbsp;</span> <i>";
 	if ($op_time > 1) echo "<span style='color: red;'>";
-	echo round($op_time, 4)." seconds (Elapsed execution time: ".round($elapsed_time, 4)." seconds)";
+	echo round($op_time, 4)." seconds (Elapsed time: ".round($elapsed_time, 4)." seconds)";
 	if ($op_time > 1) echo "</span>";
-	echo "</i>\n";
+	echo "</i></p>\n";
 }
 
 function is_valid($query)
@@ -258,6 +255,13 @@ function is_reset($query)
 	
 	else
 		return false;
+}
+
+function is_link_pref($query)
+{
+	global $link_users;
+	
+	return !is_valid($query) && in_array(trim($query), $link_users);
 }
 
 function split_query($query)
@@ -724,7 +728,7 @@ function lookup_user_by_name($screen_name)
 
 function rate($text, $u, $uid)
 {
-	global $conn, $db;
+	global $conn, $db, $confirm_msgs;
 	
 	$fmt = " like ";
 	$artist = trim(substr($text, stripos($text, $fmt) + strlen($fmt)));
@@ -746,8 +750,11 @@ function rate($text, $u, $uid)
 	
 	if (!empty($u))
 	{
+		shuffle($confirm_msgs);
+		$confirm = $confirm_msgs[0];
+		
 		mysqli_query($db, "INSERT INTO rating (uid, artist, rating) VALUES ('$uid', '$artist', '$rating')");
-		tweet("@$u Got it. From now on I'll tweet you tunes $rating_desc like $artist.");
+		tweet("@$u $confirm From now on I'll tweet you tunes $rating_desc like $artist.");
 		write_to_log("Recording explicit rating from user @$u for artist $artist.");
 		return true;
 	}
@@ -762,6 +769,7 @@ function get_user_settings($uid)
 	
 	$likes = array();
 	$dislikes = array();
+	$link = "@youtube";
 	
 	$result = mysqli_query($db, "SELECT * FROM rating WHERE uid = '$uid' AND rating > 0");
 	$i = 0;
@@ -779,7 +787,14 @@ function get_user_settings($uid)
 		$dislikes[$i++] = $row['artist'];
 	}
 	
-	return array("likes" => $likes, "dislikes" => $dislikes);
+	$result = mysqli_query($db, "SELECT * FROM link WHERE uid = '$uid'");
+	
+	while ($row = mysqli_fetch_assoc($result))
+	{
+		$link = $row['service'];
+	}
+	
+	return array("likes" => $likes, "dislikes" => $dislikes, "link" => $link);
 }
 
 function get_tags_for_artist($artist)
@@ -829,6 +844,12 @@ function reset_prefs($tweet, $u, $uid)
 	{
 		mysqli_query($db, "DELETE FROM rating WHERE uid = '$uid'");
 		write_to_log("Reset ratings for user $u.");
+	}
+	
+	if ((stripos($tweet, " link type") !== false) || $reset_all)
+	{
+		mysqli_query($db, "DELETE FROM link WHERE uid = '$uid'");
+		write_to_log("Reset link preference for user $u.");
 	}
 	
 	return tweet("@$u Your preferences were reset at ".date("g:i A")." on ".date("M j, Y").".");
@@ -915,11 +936,41 @@ function get_soundcloud_link($music_data)
 
 function extract_link_type(&$tweet, &$settings, $site)
 {
-	if (stripos($tweet, "on $site") !== false)
+	if (stripos($tweet, $site) !== false)
 	{
-		$tweet = str_ireplace("on $site", "", $tweet);
+		$tweet = str_ireplace($site, "", $tweet);
 		$settings['link'] = $site;
 		write_to_log("Set recommendation link type to $site.");
+	}
+}
+
+function set_link_pref($site, $u, $uid)
+{
+	global $db, $confirm_msgs;
+	
+	$result = mysqli_query($db, "SELECT * FROM link WHERE uid = '$uid'");
+	$pref_exists = false;
+	
+	while ($row = mysqli_fetch_assoc($result))
+	{
+		$pref_exists = true;
+	}
+	
+	if ($pref_exists)
+		mysqli_query($db, "UPDATE link SET service = '$site' WHERE uid = '$uid'");
+		
+	else
+		mysqli_query($db, "INSERT INTO link VALUES ('$uid', '$site')");
+		
+	shuffle($confirm_msgs);
+	$link_user = lookup_user_by_name($site);
+	$link_user_name = $link_user['name'];
+	
+	write_to_log("Set link preference for @$u to $site.");
+		
+	foreach ($confirm_msgs as $confirm)
+	{
+		return tweet("@$u $confirm From now on I'll tweet you recommendations with links to $link_user_name.");
 	}
 }
 
@@ -938,6 +989,9 @@ foreach ($direct_messages as $dm)
 	
 	if (is_rating($text))
 		rate($text, $user, $uid);
+		
+	else if (is_link_pref($text))
+		set_link_pref($text, $user, $uid);
 		
 	else if (is_valid($text))
 		recommend($user, $text, $settings);
@@ -969,6 +1023,8 @@ echo "<a href='tmtlog.txt' target='_blank'>Activity log</a>";
 echo "</p>\n";
 echo "<br />\n";
 echo "</center>\n";
+
+fclose($log_file);
 ?>
 </body>
 </html>

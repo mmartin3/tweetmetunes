@@ -13,8 +13,8 @@ twttr.anywhere(function(twitter)
 });
 
 function tweetMeTunes()
-{
-	parent.location = "http://twitter.com/?status=d tweetmetunes" + document.getElementById('like').value + document.getElementById('q').value;
+{	
+	parent.location = "http://twitter.com/?status=d tweetmetunes" + document.getElementById('like').value + document.getElementById('q').value + " " + getSelectedLinkType();
 }
 
 function searchNowPlaying()
@@ -24,7 +24,18 @@ function searchNowPlaying()
 
 function submitQuery()
 {
-	document.getElementById('status').value = "d tweetmetunes" + document.getElementById('like').value + document.getElementById('q').value;
+	document.getElementById('status').value = "d tweetmetunes" + document.getElementById('like').value + document.getElementById('q').value + " " + getSelectedLinkType();
+}
+
+function getSelectedLinkType()
+{
+	var radioButtons = document.getElementsByName('service');
+	
+	for (var i = 0; i < radioButtons.length; i++)
+	{
+		if (radioButtons[i].checked)
+			return radioButtons[i].value;
+	}
 }
 </script>
 </head>
@@ -38,8 +49,7 @@ function submitQuery()
 music recommendation bot under development for 
 <a href="http://zacharski.org" target="_blank">Professor Zacharski</a>'s Data Mining and Information Retrieval class at 
 <a href="http://umw.edu" target="_blank">UMW</a>.</p>
-<p>Tweet Me Tunes is also powered by <a href="http://last.fm" target="_blank">Last.fm</a> and 
-<a href="http://youtube.com" target="_blank">YouTube</a>. Get the 
+<p>Tweet Me Tunes is also powered by <a href="http://last.fm" target="_blank">Last.fm</a>. Get the 
 <a href="http://github.com/mmartin3/tweetmetunes" target="_blank">source code</a> at 
 <a href="http://github.com" target="_blank">GitHub</a>.</p>
 <p>Queries must be formatted as direct messages.</p>
@@ -69,6 +79,15 @@ to have your query tweet formatted for you.</p>
 </select>
 <input class="searchbox" id="q" name="q" type="text" />
 </p>
+<p>
+<input type="radio" name="service" value="" checked /><span class="link-selections">default link</span>
+<input type="radio" name="service" value="@YouTube" /><span class="link-selections">@YouTube</span>
+<input type="radio" name="service" value="@lastfm" /><span class="link-selections">@lastfm</span>
+<input type="radio" name="service" value="@hypem" /><span class="link-selections">@hypem</span>
+<input type="radio" name="service" value="@amazon" /><span class="link-selections">@amazon</span>
+<input type="radio" name="service" value="@iTunes" /><span class="link-selections">@iTunes</span>
+<input type="radio" name="service" value="@SoundCloud" /><span class="link-selections">@SoundCloud</span>
+</p>
 </form>
 <p>
 <input type="button" value=" Tweet me tunes! " onClick="tweetMeTunes();" />&nbsp;
@@ -77,9 +96,23 @@ to have your query tweet formatted for you.</p>
 <div id="follow"></div>
 <fieldset id="preferences">
 <legend id="prefsLegend"><b>User Settings</b></legend>
+<form id="linkForm" action="http://twitter.com/" method="get">
+By default send links to 
+<select name="status" class="reset-select">
+<option value="d tweetmetunes @YouTube">YouTube</option>
+<option value="d tweetmetunes @lastfm">Last.fm</option>
+<option value="d tweetmetunes @hypem">The Hype Machine</option>
+<option value="d tweetmetunes @amazon">Amazon</option>
+<option value="d tweetmetunes @iTunes">iTunes</option>
+<option value="d tweetmetunes @SoundCloud">SoundCloud</option>
+</select>
+&nbsp;
+<input id="linkButton" type="submit" value=" Submit " />
+</form>
 <form id="prefsForm" action="http://twitter.com/" method="get">
 <select name="status" class="reset-select">
 <option value="d tweetmetunes reset all">all</option>
+<option value="d tweetmetunes reset link type">link type</option>
 <option value="d tweetmetunes reset ratings">ratings</option>
 </select>
 &nbsp;
@@ -89,7 +122,7 @@ to have your query tweet formatted for you.</p>
 <div id="footer">
 <p><b>Maintained by:</b> 
 Matt Martin (@electrovert) and Zak Taccardi (@ZakTaccardi)</p>
-<p><b>Last updated:</b> November 12, 2010</p>
+<p><b>Last updated:</b> November 18, 2010</p>
 </div>
 </center>
 </td>
