@@ -36,6 +36,11 @@ input[type="radio"]
 	margin-right: 2px;
 }
 
+.logo
+{
+	padding-top: 5px;
+}
+
 .twitter-button
 {
 	margin-top: 5px;
@@ -75,7 +80,7 @@ p.ex
 
 #footer
 {
-	margin-top: 20px;
+	margin-top: 40px;
 }
 
 #qtype
@@ -105,4 +110,9 @@ p.ex
 {
 	margin: auto;
 	padding-top: 40px;
+}
+
+#follow
+{
+	margin-top: 40px;
 }
