@@ -37,7 +37,7 @@ date_default_timezone_set("America/New York");
 set_time_limit($delay);
 error_reporting(0);
 
-$link_users = array("@YouTube", "@lastfm", "@hypem", "@amazon", "@iTunes", "@SoundCloud");
+$link_types = array("@YouTube" => "YouTube", "@lastfm" => "Last.fm", "@hypem" => "The Hype Machine", "@amazon" => "Amazon", "@iTunes" => "iTunes", "@SoundCloud" => "SoundCloud");
 $confirm_msgs = array("Alright.", "Got it.", "Understood.", "OK.", "Of course.");
 
 include 'distance.php';
@@ -57,17 +57,22 @@ function tweet($status)
 	
 	write_to_log("Sending tweet: $status");
 	$result = json_decode(json_encode($conn->post('statuses/update', array('status' => $status))), true);
-	if (empty($result['error'])) write_to_log("Tweet posted successfully.");
-	else write_to_log("Failed sending tweet. ".$result['error']);
+	
+	if (empty($result['error']))
+		write_to_log("Tweet posted successfully.");
+	
+	else
+		write_to_log("Failed sending tweet. ".$result['error']);
+		
 	return $result;
 }
 
 function recommend($u, $text, $settings)
 {
-	global $conn, $last_fm_key, $link_users;
+	global $conn, $last_fm_key, $link_types;
 	
-	foreach ($link_users as $link_type)
-		extract_link_type($text, $settings, $link_type);
+	foreach ($link_types as $key => $value)
+		extract_link_type($text, $settings, $key, $value);
 	
 	$query_music = split_query($text);
 	$original_query = $query_music;
@@ -265,9 +270,9 @@ function is_reset($query)
 
 function is_link_pref($query)
 {
-	global $link_users;
+	global $link_types;
 	
-	return !is_valid($query) && in_array(trim($query), $link_users);
+	return !is_valid($query) && array_key_exists(trim($query), $link_types);
 }
 
 function split_query($query)
@@ -940,19 +945,19 @@ function get_soundcloud_link($music_data)
 	return "";
 }
 
-function extract_link_type(&$tweet, &$settings, $site)
+function extract_link_type(&$tweet, &$settings, $name, $site)
 {
 	if (stripos($tweet, $site) !== false)
 	{
 		$tweet = str_ireplace($site, "", $tweet);
 		$settings['link'] = $site;
-		write_to_log("Set recommendation link type to $site.");
+		write_to_log("Set recommendation link type to $name.");
 	}
 }
 
 function set_link_pref($site, $u, $uid)
 {
-	global $db, $confirm_msgs;
+	global $db, $confirm_msgs, $link_types;
 	
 	$result = mysqli_query($db, "SELECT * FROM link WHERE uid = '$uid'");
 	$pref_exists = false;
@@ -968,15 +973,12 @@ function set_link_pref($site, $u, $uid)
 	else
 		mysqli_query($db, "INSERT INTO link VALUES ('$uid', '$site')");
 		
-	shuffle($confirm_msgs);
-	$link_user = lookup_user_by_name($site);
-	$link_user_name = $link_user['name'];
-	
 	write_to_log("Set link preference for @$u to $site.");
-		
+	shuffle($confirm_msgs);
+	
 	foreach ($confirm_msgs as $confirm)
 	{
-		return tweet("@$u $confirm From now on I'll tweet you recommendations with links to $link_user_name.");
+		return tweet("@$u $confirm From now on I'll tweet you recommendations with links to ".$link_types[$site].".");
 	}
 }
 
