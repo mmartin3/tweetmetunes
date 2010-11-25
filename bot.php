@@ -81,12 +81,13 @@ function recommend($u, $text, $settings)
 	$match_count = 1;
 	
 	write_to_log("Getting Last.fm data for $original_query...");
-	$query_data = extract_music_data(stripslashes($query_music), "", false, 100);
+	$query_data = extract_music_data(stripslashes($query_music), "", "", false, 100);
 	
 	if (empty($query_data['artist']))
 		return tweet("@$u Sorry, $query_music doesn't seem to contain a valid artist. Please try a different query.");
 		
 	$now_playing = search("%23nowplaying+OR+%23np+".$query_data['artist']."+".$query_data['track']);
+	shuffle($now_playing);
 	
 	foreach ($now_playing as $result)
 	{
@@ -101,7 +102,14 @@ function recommend($u, $text, $settings)
 				break;
 			
 			write_to_log("Found similar tweet: ".$result2['text']);
-			$music_data = extract_music_data($result2['text']);
+			
+			$split_index = get_split_index($result2['text']);
+			
+			if (!empty($split_index))
+				$music_data = extract_music_data($result2['text'], $split_index);
+				
+			else
+				continue;
 		
 			if (!empty($music_data['artist']) && !empty($music_data['track']))
 			{
@@ -307,20 +315,24 @@ function get_split_index($tweet)
 {
 	if (stripos($tweet, " by ") !== false) return " by ";
 	else if (stripos($tweet, "-") !== false) return "-";
+	else if (stripos($tweet, "–") !== false) return "–";
 	else if (stripos($tweet, "'s") !== false) return "'s";
 	else if (stripos($tweet, "&quot;") !== false) return "&quot;";
 	else if (stripos($tweet, "~") !== false) return "~";
 	else return "";
 }
 
-function extract_music_data($tweet, $artist_not = "", $tokenize = true, $min_plays = 10000)
+function extract_music_data($tweet, $split_index = "", $artist_not = "", $tokenize = true, $min_plays = 10000)
 {
 	global $conn, $last_fm_key;
 	
 	$original_tweet = $tweet;
 	$tweet = str_ireplace("#nowplaying", "", $tweet);
 	$tweet = str_ireplace("#np", "", $tweet);
-	$split_index = get_split_index($tweet);
+	
+	if (empty($split_index))
+		$split_index = get_split_index($tweet);
+	
 	$tweet = str_ireplace($split_index, " $split_index ", $tweet);
 	$tweet = str_ireplace(".", "", $tweet);
 	$tweet = str_ireplace("!", "", $tweet);
@@ -520,8 +532,13 @@ function extract_music_data($tweet, $artist_not = "", $tokenize = true, $min_pla
 		
 		if (!empty($music_data['artist']))
 		{
+			$miss_num = 0;
+			
 			foreach ($track_terms as $term)
 			{
+				if ($miss_num > 2)
+					break;
+					
 				if (stripos($term, "#") !== false)
 					continue;
 				
@@ -557,14 +574,17 @@ function extract_music_data($tweet, $artist_not = "", $tokenize = true, $min_pla
 					write_to_log("$track_match is a track by $artist_match.");
 				
 				else
+				{
+					$miss_num++;
 					write_to_log("$term does not match any tracks by ".$music_data['artist'].".");
+				}
 			}
 		}
 		
 		if (empty($music_data['track']) && ($most_plays >= $min_plays) && empty($artist_not))
 		{
 			write_to_log("Couldn't find a matching track for the artist ".$music_data['artist'].". Searching again for a different artist.");
-			return extract_music_data($tweet, $music_data['artist']); //extracted wrong artist, try again with a different one
+			return extract_music_data($tweet, "", $music_data['artist']); //extracted wrong artist, try again with a different one
 		}
 			
 		else if ($most_plays < $min_plays) return array(); //this probably isn't a valid artist, so skip and return an empty array
@@ -945,7 +965,7 @@ function get_soundcloud_link($music_data)
 	return "";
 }
 
-function extract_link_type(&$tweet, &$settings, $name, $site)
+function extract_link_type(&$tweet, &$settings, $site, $name)
 {
 	if (stripos($tweet, $site) !== false)
 	{
