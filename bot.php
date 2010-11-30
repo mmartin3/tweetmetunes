@@ -44,7 +44,7 @@ include 'distance.php';
 
 function search($q)
 {
-	$search = file_get_contents("http://search.twitter.com/search.json?lang=en&q=$q");
+	$search = file_get_contents("http://search.twitter.com/search.json?lang=all&result_type=recent&q=$q");
 	if ($search === false) die('Error occurred.');
 	$result = json_decode($search, true);
 	write_to_log("Returning ".count($result['results'])." results matching search query: $q");
