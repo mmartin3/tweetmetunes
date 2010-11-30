@@ -39,6 +39,7 @@ error_reporting(0);
 
 $link_types = array("@YouTube" => "YouTube", "@lastfm" => "Last.fm", "@hypem" => "The Hype Machine", "@amazon" => "Amazon", "@iTunes" => "iTunes", "@SoundCloud" => "SoundCloud");
 $confirm_msgs = array("Alright.", "Got it.", "Understood.", "OK.", "Of course.");
+$split_indexes = array(" by ", "-", "–", "'s", "&quot;", "~");
 
 include 'distance.php';
 
@@ -99,7 +100,7 @@ function recommend($u, $text, $settings)
 		foreach ($also_playing as $result2)
 		{
 			if ($match_count > 5)
-				break;
+				break 2;
 			
 			write_to_log("Found similar tweet: ".$result2['text']);
 			
@@ -313,13 +314,15 @@ function get_artist_plays($artist)
 
 function get_split_index($tweet)
 {
-	if (stripos($tweet, " by ") !== false) return " by ";
-	else if (stripos($tweet, "-") !== false) return "-";
-	else if (stripos($tweet, "–") !== false) return "–";
-	else if (stripos($tweet, "'s") !== false) return "'s";
-	else if (stripos($tweet, "&quot;") !== false) return "&quot;";
-	else if (stripos($tweet, "~") !== false) return "~";
-	else return "";
+	global $split_indexes;
+	
+	foreach ($split_indexes as $split_index)
+	{
+		if (stripos($tweet, $split_index) !== false)
+			return $split_index;
+	}
+	
+	return "";
 }
 
 function extract_music_data($tweet, $split_index = "", $artist_not = "", $tokenize = true, $min_plays = 10000)
@@ -327,16 +330,18 @@ function extract_music_data($tweet, $split_index = "", $artist_not = "", $tokeni
 	global $conn, $last_fm_key;
 	
 	$original_tweet = $tweet;
-	$tweet = str_ireplace("#nowplaying", "", $tweet);
-	$tweet = str_ireplace("#np", "", $tweet);
 	
 	if (empty($split_index))
-		$split_index = get_split_index($tweet);
+		$split_index = get_split_index($tweet, $split_index);
+		
+	if ($split_index == "by")
+		$artist_loc = "after";
+	
+	else if ($split_index == "'s");
+		$artist_loc = "before";
 	
 	$tweet = str_ireplace($split_index, " $split_index ", $tweet);
-	$tweet = str_ireplace(".", "", $tweet);
-	$tweet = str_ireplace("!", "", $tweet);
-	$tweet = str_ireplace("?", "", $tweet);
+	filter_stop_words($tweet);
 	$music_data = array();
 	$skip_track = false;
 	
@@ -370,70 +375,78 @@ function extract_music_data($tweet, $split_index = "", $artist_not = "", $tokeni
 		$letters_and_numbers = array_merge($letters_and_numbers, range('a', 'z'));
 		$letters_and_numbers = array_merge($letters_and_numbers, range('0', '9'));
 	
-		foreach ($words_before as $word)
+		if (empty($artist_loc) || $artist_loc == "before")
 		{
-			$word = trim($word);
-			$first_char = substr($word, 0, 1);
-			
-			if ($first_char == "@")
+			foreach ($words_before as $word)
 			{
-				$user = lookup_user_by_name($word);
-				$word = $user['name'];
-			}
-			
-			else if ((!in_array($first_char, $letters_and_numbers) && (strlen($word) == 1)) || (stripos($word, "http:") !== false) || $word_count >= 10)
-				break;
-			
-			$str = "$word $str";
-			$str = trim($str);
-			$play_count = get_artist_plays($str);
-			
-			if ($play_count >= $min_plays)
-			{
-				write_to_log("$str is a valid artist with $play_count plays on Last.fm.");
-				$terms_before[$str] = $play_count;
-			}
+				$word = trim($word);
+				$first_char = substr($word, 0, 1);
 				
-			else if (!empty($str))
-				write_to_log("$str is not a valid artist.");
+				if ($first_char == "@")
+				{
+					$user = lookup_user_by_name($word);
+					$word = $user['name'];
+				}
 				
-			$word_count++;
+				else if ((!in_array($first_char, $letters_and_numbers) && (strlen($word) == 1)) || (stripos($word, "http:") !== false) || $word_count >= 10)
+					break;
+				
+				$str = "$word $str";
+				$str = trim($str);
+							
+				$play_count = get_artist_plays($str);
+				
+				if ($play_count >= $min_plays)
+				{
+					write_to_log("$str is a valid artist with $play_count plays on Last.fm.");
+					$terms_before[$str] = $play_count;
+				}
+				
+				else if (!empty($str))
+					write_to_log("$str is not a valid artist.");
+				
+				$word_count++;
+			}
 		}
 		
-		$str = "";
-		$word_count = 0;
-		
-		foreach ($words_after as $word)
+		if (empty($artist_loc) || $artist_loc == "after")
 		{
-			$word = trim($word);
-			$first_char = substr($word, 0, 1);
-			
-			if ($first_char == "#")
-				continue;
-			
-			if ($first_char == "@")
+			$str = "";
+			$word_count = 0;
+		
+			foreach ($words_after as $word)
 			{
-				$user = lookup_user_by_name($word);
-				$word = $user['name'];
-			}
-			
-			else if ((!in_array($first_char, $letters_and_numbers) && (strlen($word) == 1)) || (stripos($word, "http:") !== false) || $word_count >= 10)
-				break;
-			
-			$str .= " ".$word;
-			$str = trim($str);
-			$play_count = get_artist_plays($str);
-			
-			if ($play_count >= $min_plays)
-			{
-				write_to_log("$str is a valid artist with $play_count plays on Last.fm.");
-				$terms_after[$str] = $play_count;
-			}
+				$word = trim($word);
+				$first_char = substr($word, 0, 1);
 				
-			else if (!empty($str))
-				write_to_log("$str is not a valid artist.");
+				if ($first_char == "#")
+					continue;
 				
-			$word_count++;
+				if ($first_char == "@")
+				{
+					$user = lookup_user_by_name($word);
+					$word = $user['name'];
+				}
+				
+				else if ((!in_array($first_char, $letters_and_numbers) && (strlen($word) == 1)) || (stripos($word, "http:") !== false) || $word_count >= 10)
+					break;
+				
+				$str .= " ".$word;
+				$str = trim($str);
+				
+				$play_count = get_artist_plays($str);
+					
+				if ($play_count >= $min_plays)
+				{
+					write_to_log("$str is a valid artist with $play_count plays on Last.fm.");
+					$terms_after[$str] = $play_count;
+				}
+					
+				else if (!empty($str))
+					write_to_log("$str is not a valid artist.");
+			
+				$word_count++;
+			}
 		}
 	}
 	
@@ -785,7 +798,7 @@ function rate($text, $u, $uid)
 		$confirm = $confirm_msgs[0];
 		
 		mysqli_query($db, "INSERT INTO rating (uid, artist, rating) VALUES ('$uid', '$artist', '$rating')");
-		tweet("@$u $confirm From now on I'll tweet you tunes $rating_desc like $artist.");
+		tweet("@$u $confirm From now on I'll send you recommendations $rating_desc like $artist.");
 		write_to_log("Recording explicit rating from user @$u for artist $artist.");
 		return true;
 	}
@@ -998,8 +1011,29 @@ function set_link_pref($site, $u, $uid)
 	
 	foreach ($confirm_msgs as $confirm)
 	{
-		return tweet("@$u $confirm From now on I'll tweet you recommendations with links to ".$link_types[$site].".");
+		return tweet("@$u $confirm From now on I'll send you recommendations with links to ".$link_types[$site].".");
 	}
+}
+
+function filter_stop_words(&$str, $split_index = "")
+{
+	global $split_indexes;
+	
+	$stop_words = array("#nowplaying", "#np", "now playing", "I'm listening to", "listening to", "rt @", "/", "|", "on @Grooveshark", "#lastfm", "!", "?", "this song", ":", "the", "a");
+	
+	if (!empty($split_index))
+	{
+		foreach ($split_indexes as $unused_character)
+		{
+			if ($split_index != $unused_character)
+				array_push($stop_words, $unused_character);
+		}
+	}
+
+	foreach ($stop_words as $word)			
+		$str = str_ireplace($word, " ", $str);
+	
+	return trim($str);
 }
 
 update_follows();
