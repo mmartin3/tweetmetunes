@@ -91,14 +91,14 @@ function recommend($u, $text, $settings)
 	
 	foreach ($now_playing as $result)
 	{
-		if ($match_count > 4)
+		if ($match_count > 5)
 				break;
 				
 		$also_playing = search("%23nowplaying+OR+%23np&nots=".$query_data['artist']."&from=".$result['from_user']);
 		
 		foreach ($also_playing as $result2)
 		{
-			if ($match_count > 4)
+			if ($match_count > 5)
 				break 2;
 			
 			write_to_log("Found similar tweet: ".$result2['text']);
