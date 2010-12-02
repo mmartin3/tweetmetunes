@@ -81,7 +81,6 @@ function recommend($u, $text, $settings)
 	$matches = array();
 	$match_count = 1;
 	
-	write_to_log("Getting Last.fm data for $original_query...");
 	$query_data = extract_music_data(stripslashes($query_music), "", "", false, 100);
 	
 	if (empty($query_data['artist']))
@@ -92,14 +91,14 @@ function recommend($u, $text, $settings)
 	
 	foreach ($now_playing as $result)
 	{
-		if ($match_count > 5)
+		if ($match_count > 4)
 				break;
 				
 		$also_playing = search("%23nowplaying+OR+%23np&nots=".$query_data['artist']."&from=".$result['from_user']);
 		
 		foreach ($also_playing as $result2)
 		{
-			if ($match_count > 5)
+			if ($match_count > 4)
 				break 2;
 			
 			write_to_log("Found similar tweet: ".$result2['text']);
@@ -327,7 +326,7 @@ function get_split_index($tweet)
 
 function extract_music_data($tweet, $split_index = "", $artist_not = "", $tokenize = true, $min_plays = 10000)
 {
-	global $conn, $last_fm_key;
+	global $db, $conn, $last_fm_key;
 	
 	$original_tweet = $tweet;
 	
@@ -340,8 +339,9 @@ function extract_music_data($tweet, $split_index = "", $artist_not = "", $tokeni
 	else if ($split_index == "'s");
 		$artist_loc = "before";
 	
-	$tweet = str_ireplace($split_index, " $split_index ", $tweet);
 	filter_stop_words($tweet);
+	$tweet = str_ireplace($split_index, " $split_index ", $tweet);
+	$tweet = str_replace(".", "", $tweet);
 	$music_data = array();
 	$skip_track = false;
 	
@@ -363,128 +363,155 @@ function extract_music_data($tweet, $split_index = "", $artist_not = "", $tokeni
 		$words_before = array_reverse(explode(" ", $str_before));
 	}
 	
+	if (artist_exists($str_before))
+	{
+		$music_data['artist'] = $str_before;
+		$artist_loc = "before";
+		
+		if (track_exists($str_after, $str_before))
+		{
+			$music_data['track'] = $str_after;
+			return $music_data;
+		}
+	}
+	
+	else if (artist_exists($str_after))
+	{
+		$music_data['artist'] = $str_after;
+		$artist_loc = "after";
+		
+		if (track_exists($str_before, $str_after))
+		{
+			$music_data['track'] = $str_before;
+			return $music_data;
+		}
+	}
+	
 	$words_after = explode(" ", $str_after);
 	$terms_before = array();
 	$terms_after = array();
 	$str = "";
 	$word_count = 0;
-	
-	if ($tokenize)
-	{
-		$letters_and_numbers = range('a', 'z');
-		$letters_and_numbers = array_merge($letters_and_numbers, range('a', 'z'));
-		$letters_and_numbers = array_merge($letters_and_numbers, range('0', '9'));
-	
-		if (empty($artist_loc) || $artist_loc == "before")
+
+	if (empty($music_data['artist']))
+	{	
+		if ($tokenize)
 		{
-			foreach ($words_before as $word)
+			$letters_and_numbers = range('a', 'z');
+			$letters_and_numbers = array_merge($letters_and_numbers, range('a', 'z'));
+			$letters_and_numbers = array_merge($letters_and_numbers, range('0', '9'));
+		
+			if (empty($artist_loc) || $artist_loc == "after")
 			{
-				$word = trim($word);
-				$first_char = substr($word, 0, 1);
-				
-				if ($first_char == "@")
+				foreach ($words_before as $word)
 				{
-					$user = lookup_user_by_name($word);
-					$word = $user['name'];
+					$word = trim($word);
+					$first_char = substr($word, 0, 1);
+					
+					if ($first_char == "@")
+					{
+						$user = lookup_user_by_name($word);
+						$word = $user['name'];
+					}
+					
+					else if ((!in_array($first_char, $letters_and_numbers) && (strlen($word) == 1)) || (stripos($word, "http") !== false) || (stripos($word, "www") !== false) || $word_count >= 10)
+						break;
+					
+					$str = "$word $str";
+					$str = trim($str);
+								
+					$play_count = get_artist_plays($str);
+					
+					if ($play_count >= $min_plays)
+					{
+						write_to_log("$str is a valid artist with $play_count plays on Last.fm.");
+						$terms_before[$str] = $play_count;
+					}
+					
+					else if (!empty($str))
+						write_to_log("$str is not a valid artist.");
+					
+					$word_count++;
 				}
-				
-				else if ((!in_array($first_char, $letters_and_numbers) && (strlen($word) == 1)) || (stripos($word, "http:") !== false) || $word_count >= 10)
-					break;
-				
-				$str = "$word $str";
-				$str = trim($str);
-							
-				$play_count = get_artist_plays($str);
-				
-				if ($play_count >= $min_plays)
-				{
-					write_to_log("$str is a valid artist with $play_count plays on Last.fm.");
-					$terms_before[$str] = $play_count;
-				}
-				
-				else if (!empty($str))
-					write_to_log("$str is not a valid artist.");
-				
-				$word_count++;
 			}
-		}
-		
-		if (empty($artist_loc) || $artist_loc == "after")
-		{
-			$str = "";
-			$word_count = 0;
-		
-			foreach ($words_after as $word)
-			{
-				$word = trim($word);
-				$first_char = substr($word, 0, 1);
-				
-				if ($first_char == "#")
-					continue;
-				
-				if ($first_char == "@")
-				{
-					$user = lookup_user_by_name($word);
-					$word = $user['name'];
-				}
-				
-				else if ((!in_array($first_char, $letters_and_numbers) && (strlen($word) == 1)) || (stripos($word, "http:") !== false) || $word_count >= 10)
-					break;
-				
-				$str .= " ".$word;
-				$str = trim($str);
-				
-				$play_count = get_artist_plays($str);
-					
-				if ($play_count >= $min_plays)
-				{
-					write_to_log("$str is a valid artist with $play_count plays on Last.fm.");
-					$terms_after[$str] = $play_count;
-				}
-					
-				else if (!empty($str))
-					write_to_log("$str is not a valid artist.");
 			
-				$word_count++;
+			if (empty($artist_loc) || $artist_loc == "before")
+			{
+				$str = "";
+				$word_count = 0;
+			
+				foreach ($words_after as $word)
+				{
+					$word = trim($word);
+					$first_char = substr($word, 0, 1);
+					
+					if ($first_char == "#")
+						continue;
+					
+					if ($first_char == "@")
+					{
+						$user = lookup_user_by_name($word);
+						$word = $user['name'];
+					}
+					
+					else if ((!in_array($first_char, $letters_and_numbers) && (strlen($word) == 1)) || (stripos($word, "http:") !== false) || $word_count >= 10)
+						break;
+					
+					$str .= " ".$word;
+					$str = trim($str);
+					
+					$play_count = get_artist_plays($str);
+						
+					if ($play_count >= $min_plays)
+					{
+						write_to_log("$str is a valid artist with $play_count plays on Last.fm.");
+						$terms_after[$str] = $play_count;
+					}
+						
+					else if (!empty($str))
+						write_to_log("$str is not a valid artist.");
+				
+					$word_count++;
+				}
 			}
 		}
-	}
-	
-	else
-	{
-		if (substr($str_before, 0, 1) == "@")
-		{
-			$user = lookup_user_by_name($str_before);
-			$str_before = $user['name'];
-		}
 		
-		if (substr($str_after, 0, 1) == "@")
+		else
 		{
-			$user = lookup_user_by_name($str_after);
-			$str_after = $user['name'];
-		}
-		
-		$play_count = get_artist_plays($str_before);
-		
-		if ($play_count >= $min_plays)
-		{
-			write_to_log("$str_before is a valid artist with $play_count plays on Last.fm.");
-			$terms_before[$str_before] = $play_count;
-		}
+			if (substr($str_before, 0, 1) == "@")
+			{
+				$user = lookup_user_by_name($str_before);
+				$str_before = $user['name'];
+			}
+			
+			if (substr($str_after, 0, 1) == "@")
+			{
+				$user = lookup_user_by_name($str_after);
+				$str_after = $user['name'];
+			}
+			
+			$play_count = get_artist_plays($str_before);
+			
+			if ($play_count >= $min_plays)
+			{
+				write_to_log("$str_before is a valid artist with $play_count plays on Last.fm.");
+				$terms_before[$str_before] = $play_count;
+			}
 				
-		else if (!empty($str_before))
-			write_to_log("$str_before is not a valid artist.");
-		
-		$play_count = get_artist_plays($str_after);
-		
-		if ($play_count >= $min_plays)
-		{
-			write_to_log("$str_after is a valid artist with $play_count plays on Last.fm.");
-			$terms_after[$str_after] = $play_count;
+			else if (!empty($str_before))
+				write_to_log("$str_before is not a valid artist.");
+			
+			$play_count = get_artist_plays($str_after);
+			
+			if ($play_count >= $min_plays)
+			{
+				write_to_log("$str_after is a valid artist with $play_count plays on Last.fm.");
+				$terms_after[$str_after] = $play_count;
+			}
+					
+			else if (!empty($str_after))
+				write_to_log("$str_after is not a valid artist.");
 		}
-				
-		else if (!empty($str_after))
-			write_to_log("$str_after is not a valid artist.");
 	}
 	
 	if (!$skip_track)
@@ -521,6 +548,7 @@ function extract_music_data($tweet, $split_index = "", $artist_not = "", $tokeni
 				$music_data['track'] = $str_before;
 			
 			write_to_log("Found track ".$music_data['track']." by artist ".$music_data['artist'].".");
+			save_music_data($music_data);
 			return $music_data;
 		}
 		
@@ -584,7 +612,10 @@ function extract_music_data($tweet, $split_index = "", $artist_not = "", $tokeni
 				catch (Exception $e) {}
 				
 				if (!empty($track_match) && $same_artist)
+				{
+					$miss_num = 0;
 					write_to_log("$track_match is a track by $artist_match.");
+				}
 				
 				else
 				{
@@ -612,6 +643,7 @@ function extract_music_data($tweet, $split_index = "", $artist_not = "", $tokeni
 			write_to_log("Parsed $original_tweet and found artist ".$music_data['artist'].".");
 	}
 	
+	save_music_data($music_data);
 	return $music_data; //found artist and/or track
 }
 
@@ -843,7 +875,7 @@ function get_user_settings($uid)
 
 function get_tags_for_artist($artist)
 {
-	global $last_fm_key;
+	global $db, $last_fm_key;
 	
 	if (empty($artist)) return array();
 	
@@ -851,30 +883,45 @@ function get_tags_for_artist($artist)
 	$tags = array();
 	$tag_str = "Last.fm tags for artist $artist: ";
 	
-	try
+	$result = mysqli_query($db, "SELECT * FROM tags WHERE artist = '$artist'");
+	
+	while ($row = mysqli_fetch_assoc($result))
 	{
-		$xml = new SimpleXMLElement("http://ws.audioscrobbler.com/2.0/?method=artist.getTopTags&artist=".urlencode($artist)."&autocorrect=1&api_key=$last_fm_key", NULL, true);
-		
-		for ($i = 0; $i < 50; $i++)
-		{		
-			$count = (int)($xml->toptags->tag[$i]->count);			
-			$tag_name = (string)($xml->toptags->tag[$i]->name);
-			
-			if ($count == 0)
-				break;
-				
-			if ((!empty($tag_name)) && (strcasecmp($tag_name, $artist) != 0))
-			{
-				$tags[$tag_name] = $count;
-				if ($i > 0) $tag_str .= ", ";
-				$tag_str .= "$tag_name ($count)";
-			}
-		}
+		$tags[$row['name']] = $row['count'];
 	}
 	
-	catch (Exception $e) {}
+	if (empty($tags))
+	{
+		try
+		{
+			$xml = new SimpleXMLElement("http://ws.audioscrobbler.com/2.0/?method=artist.getTopTags&artist=".urlencode($artist)."&autocorrect=1&api_key=$last_fm_key", NULL, true);
+			
+			for ($i = 0; $i < 50; $i++)
+			{		
+				$count = (int)($xml->toptags->tag[$i]->count);			
+				$tag_name = (string)($xml->toptags->tag[$i]->name);
+				
+				if ($count == 0)
+					break;
+					
+				if ((!empty($tag_name)) && (strcasecmp($tag_name, $artist) != 0))
+				{
+					$tags[$tag_name] = $count;
+					if ($i > 0) $tag_str .= ", ";
+					$tag_str .= "$tag_name ($count)";
+				}
+			}
+		}
+		
+		catch (Exception $e) {}
+		
+		save_tags($tags, $artist);
+		write_to_log("$tag_str");
+	}
 	
-	write_to_log("$tag_str");
+	else
+		write_to_log("Loaded tags for $artist from database.");
+	
 	return $tags;
 }
 
@@ -1019,7 +1066,7 @@ function filter_stop_words(&$str, $split_index = "")
 {
 	global $split_indexes;
 	
-	$stop_words = array("#nowplaying", "#np", "now playing", "I'm listening to", "listening to", "rt @", "/", "|", "on @Grooveshark", "#lastfm", "!", "?", "this song", ":", "the", "a");
+	$stop_words = array("#nowplaying", "#np", "now playing", "I'm listening to", "listening to", "rt @", "/", "|", "on @Grooveshark", "!", "?", " this song ", ":D", ":-D", ":)", ":-)", ":X", ":-X", ";-)",  ";)", "&quot;", ":");
 	
 	if (!empty($split_index))
 	{
@@ -1034,6 +1081,76 @@ function filter_stop_words(&$str, $split_index = "")
 		$str = str_ireplace($word, " ", $str);
 	
 	return trim($str);
+}
+
+function save_music_data($music_data)
+{
+	global $db;
+	
+	$artist = $music_data['artist'];
+	$track = $music_data['track'];
+	
+	if (!empty($music_data['artist']))
+	{
+		mysqli_query($db, "INSERT INTO artist VALUES ('$artist')");
+		
+		if (!empty($music_data['track']))
+			mysqli_query($db, "INSERT INTO track (title, artist) VALUES ('$track', '$artist')");
+	}
+}
+
+function artist_exists($name)
+{
+	global $db;
+	
+	if (empty($name))
+		return false;
+	
+	$result = mysqli_query($db, "SELECT * FROM artist WHERE LOWER(name) = '".strtolower($name)."'");
+	
+	while ($row = mysqli_fetch_assoc($result))
+	{
+		write_to_log("Found artist $name in database.");
+		return true;
+	}
+	
+	return false;
+}
+
+function track_exists($title, $artist)
+{
+	global $db;
+	
+	if (empty($track) || empty($artist))
+		return false;
+	
+	$result = mysqli_query($db, "SELECT * FROM track WHERE LOWER(track) = '".strtolower($track)."' AND LOWER(artist) = '".strtolower($artist)."'");
+	
+	while ($row = mysqli_fetch_assoc($result))
+	{
+		write_to_log("Found track $title by artist $artist in database.");
+		return true;
+	}
+	
+	return false;
+}
+
+function save_tags($tags, $artist)
+{
+	global $db;
+	
+	$result = mysqli_query($db, "SELECT * FROM tags WHERE artist = '$artist'");
+	
+	while ($row = mysqli_fetch_assoc($result))
+	{
+		return false;
+	}
+	
+	foreach ($tags as $key => $value)
+		mysqli_query($db, "INSERT INTO tags (name, count, artist) VALUES ('$key', '$value', '$artist')");
+	
+	write_to_log("Saved tags for artist $artist.");
+	return true;
 }
 
 update_follows();
