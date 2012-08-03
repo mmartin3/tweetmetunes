@@ -16,7 +16,6 @@ if (empty($delay)) $delay = 600;
 <html lang="en">
 <head>
 <title>Tweet Me Tunes bot</title>
-<meta http-equiv="refresh" content="<?php echo $delay ?>">
 <style type="text/css">
 body
 {
@@ -27,19 +26,29 @@ body
 <body>
 <?php
 require_once('twitteroauth/twitteroauth/twitteroauth.php');
-include 'config.php';
-include 'db_connect.php';
 
 $conn = new TwitterOAuth($consumer_key, $consumer_secret, $oauth_token, $oauth_token_secret);
-$log_file = fopen("tmtlog.txt", 'a') or die("can't open file");
+
+if (filesize("tmtlog.txt") > 200000)
+{
+	rename("tmtlog.txt", "tmtlog_$exec_time.txt");
+	$log_file = fopen("tmtlog.txt", 'w') or die("can't open file");
+	write_to_log("New log created. Old file moved to tmtlog_$exec_time.txt.");
+}
+
+else
+	$log_file = fopen("tmtlog.txt", 'a') or die("can't open file");
+	
 write_to_log("Connected to Twitter via oAuth.");
 date_default_timezone_set("America/New York");
 set_time_limit($delay);
-error_reporting(0);
+
+if ($_GET['er'] != 1)
+	error_reporting(0);
 
 $link_types = array("@YouTube" => "YouTube", "@lastfm" => "Last.fm", "@hypem" => "The Hype Machine", "@amazon" => "Amazon", "@iTunes" => "iTunes", "@SoundCloud" => "SoundCloud");
 $confirm_msgs = array("Alright.", "Got it.", "Understood.", "OK.", "Of course.");
-$split_indexes = array(" by ", "-", "–", "'s", "&quot;", "~");
+$split_indexes = array(" by ", "-", "ï¿½", "'s", "&quot;", "~");
 
 include 'distance.php';
 
@@ -86,7 +95,7 @@ function recommend($u, $text, $settings)
 	if (empty($query_data['artist']))
 		return tweet("@$u Sorry, $query_music doesn't seem to contain a valid artist. Please try a different query.");
 		
-	$now_playing = search("%23nowplaying+OR+%23np+".$query_data['artist']."+".$query_data['track']);
+	$now_playing = search("%23nowplaying+OR+%23np+".urlencode($query_data['artist'])."+".urlencode($query_data['track']));
 	shuffle($now_playing);
 	
 	foreach ($now_playing as $result)
@@ -94,7 +103,8 @@ function recommend($u, $text, $settings)
 		if ($match_count > 5)
 				break;
 				
-		$also_playing = search("%23nowplaying+OR+%23np&nots=".$query_data['artist']."&from=".$result['from_user']);
+		$also_playing = search("%23nowplaying+OR+%23np&nots=".urlencode($query_data['artist'])."&from=".urlencode($result['from_user']));
+		shuffle($also_playing);
 		
 		foreach ($also_playing as $result2)
 		{
@@ -732,7 +742,7 @@ function delete_message($id)
 	global $conn;
 	
 	write_to_log("Deleting direct message #$id.");
-	return json_decode(json_encode($conn->post('direct_messages/destroy', array("id" => $id)), true));
+	return json_decode(json_encode($conn->post('direct_messages/destroy', array("id" => $id))), true);
 }
 
 function list_followers($new_only = false)
@@ -742,7 +752,7 @@ function list_followers($new_only = false)
 	write_to_log("Checking followers...");
 	
 	if ($new_only)
-		return json_decode(json_encode($conn->get('followers/ids', array("following" => false)), true));
+		return json_decode(json_encode($conn->get('followers/ids', array("following" => false))), true);
 	
 	return json_decode(json_encode($conn->get('followers/ids')), true);
 }
@@ -763,7 +773,7 @@ function update_follows()
 			if ($user['following'] == false)
 			{
 				write_to_log("User @".$user['screen_name']." is now following @tweetmetunes.");
-				json_decode(json_encode($conn->post('friendships/create', array("id" => $follower_id)), true));
+				json_decode(json_encode($conn->post('friendships/create', array("id" => $follower_id))), true);
 				write_to_log("Sent follow request to @".$user['screen_name'].".");
 				$new_follow_count++;
 				
@@ -1194,7 +1204,7 @@ echo "<p><b>Set delay:</b>&nbsp;<input style='width: 40px;' name='delay' value='
 echo "<input type='submit' value=' Submit ' /></p>\n";
 echo "</form>\n";
 echo "<p>";
-echo "<a href='http://tinyurl.com/tweetmetunes' target='_blank'>Tweet Me Tunes portal</a> / ";
+echo "<a href='http://tweetmetunes.electrovert.net/' target='_blank'>Tweet Me Tunes portal</a> / ";
 echo "<a href='http://twitter.com/tweetmetunes' target='_blank'>@tweetmetunes on Twitter</a> / ";
 echo "<a href='bot.php?delay=$delay'>Tweet Me Tunes bot (run again)</a> / ";
 echo "<a href='https://github.com/mmartin3/tweetmetunes' target='_blank'>Source @ GitHub</a> / ";
