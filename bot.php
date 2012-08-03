@@ -48,7 +48,7 @@ if ($_GET['er'] != 1)
 
 $link_types = array("@YouTube" => "YouTube", "@lastfm" => "Last.fm", "@hypem" => "The Hype Machine", "@amazon" => "Amazon", "@iTunes" => "iTunes", "@SoundCloud" => "SoundCloud");
 $confirm_msgs = array("Alright.", "Got it.", "Understood.", "OK.", "Of course.");
-$split_indexes = array(" by ", "-", "�", "'s", "&quot;", "~");
+$split_indexes = array(" by ", "-", "�", "&quot;", "~");
 
 include 'distance.php';
 
@@ -1076,7 +1076,7 @@ function filter_stop_words(&$str, $split_index = "")
 {
 	global $split_indexes;
 	
-	$stop_words = array("#nowplaying", "#np", "now playing", "I'm listening to", "listening to", "rt @", "/", "|", "on @Grooveshark", "!", "?", " this song ", ":D", ":-D", ":)", ":-)", ":X", ":-X", ";-)",  ";)", "&quot;", ":");
+	$stop_words = array("#nowplaying", "#np", "now playing", "I'm listening to", "listening to", "rt @", "/", "|", "on @Grooveshark", "!", "?", " this song ", ":D", ":-D", ":)", ":-)", ":X", ":-X", ";-)",  ";)", "&quot;", ":", "on http://t.co/", "on http", "tco", );
 	
 	if (!empty($split_index))
 	{
