@@ -306,18 +306,38 @@ function get_artist_plays($artist)
 	global $last_fm_key;
 	
 	if (empty($artist))
-		return -1;
+		return 0;
 		
 	try
 	{
-		$xml = new SimpleXMLElement("http://ws.audioscrobbler.com/2.0/?method=artist.getinfo&artist=".urlencode($artist)."&api_key=$last_fm_key", NULL, true);
+		$xml = new SimpleXMLElement("http://ws.audioscrobbler.com/2.0/?method=artist.getInfo&artist=".urlencode($artist)."&api_key=$last_fm_key", NULL, true);
 		
 		return (int)($xml->artist->stats->playcount[0]);
 	}
 	
 	catch (Exception $e)
 	{
-		return -1;
+		return 0;
+	}
+}
+
+function get_track_plays($artist, $track)
+{
+	global $last_fm_key;
+	
+	if (empty($artist) || empty($track))
+		return 0;
+		
+	try
+	{
+		$xml = new SimpleXMLElement("http://ws.audioscrobbler.com/2.0/?method=track.getInfo&artist=".urlencode($artist)."&track=".urlencode($track)."&api_key=$last_fm_key", NULL, true);
+		
+		return (int)($xml->track->playcount[0]);
+	}
+	
+	catch (Exception $e)
+	{
+		return 0;
 	}
 }
 
@@ -381,6 +401,7 @@ function extract_music_data($tweet, $split_index = "", $artist_not = "", $tokeni
 		if (track_exists($str_after, $str_before))
 		{
 			$music_data['track'] = $str_after;
+			order_music_data($music_data);
 			return $music_data;
 		}
 	}
@@ -393,6 +414,7 @@ function extract_music_data($tweet, $split_index = "", $artist_not = "", $tokeni
 		if (track_exists($str_before, $str_after))
 		{
 			$music_data['track'] = $str_before;
+			order_music_data($music_data);
 			return $music_data;
 		}
 	}
@@ -558,6 +580,7 @@ function extract_music_data($tweet, $split_index = "", $artist_not = "", $tokeni
 				$music_data['track'] = $str_before;
 			
 			write_to_log("Found track ".$music_data['track']." by artist ".$music_data['artist'].".");
+			order_music_data($music_data);
 			save_music_data($music_data);
 			return $music_data;
 		}
@@ -653,6 +676,7 @@ function extract_music_data($tweet, $split_index = "", $artist_not = "", $tokeni
 			write_to_log("Parsed $original_tweet and found artist ".$music_data['artist'].".");
 	}
 	
+	order_music_data($music_data);
 	save_music_data($music_data);
 	return $music_data; //found artist and/or track
 }
@@ -1091,6 +1115,30 @@ function filter_stop_words(&$str, $split_index = "")
 		$str = str_ireplace($word, " ", $str);
 	
 	return trim($str);
+}
+
+function order_music_data(&$music_data)
+{
+	$artist = $music_data['artist'];
+	$track = $music_data['track'];
+	
+	if (!empty($artist) && !empty($track))
+	{
+		$plays_norm = get_track_plays($artist, $track);
+		$plays_rev = get_track_plays($track, $artist);
+		write_to_log("Verifying order of music data. $track has $plays_norm plays, $plays_rev plays with the tags reversed.");
+		
+		if ($plays_rev > $plays_norm)
+		{
+			//data is probably mixed up from mistagged Last.fm data, swaps the artist and track to correct it
+			$music_data['artist'] = $track;
+			$music_data['track'] = $artist;
+			write_to_log("Corrected order of music data. $track is the artist of track $artist.");
+		}
+		
+		else
+			write_to_log("Music data order is correct.");
+	}
 }
 
 function save_music_data($music_data)
